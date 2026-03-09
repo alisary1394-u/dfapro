@@ -24,8 +24,10 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy nginx configuration template
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 
+# Default port for Railway if PORT is not injected
+ENV PORT=8080
+
 # Expose port
 EXPOSE 8080
 
-# Start nginx
-CMD ["/bin/sh", "-c", "export PORT=${PORT:-8080} && envsubst '$PORT' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+# Use the official nginx entrypoint, which renders templates in /etc/nginx/templates
