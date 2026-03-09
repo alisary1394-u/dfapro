@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -16,13 +16,27 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const checkAppState = async () => {
-    // Always use local auth (no backend)
-    const localUser = await base44.auth.me();
-    setUser(localUser);
-    setIsAuthenticated(true);
-    setAppPublicSettings({ id: 'local', public_settings: {} });
-    setIsLoadingPublicSettings(false);
-    setIsLoadingAuth(false);
+    try {
+      setIsLoadingPublicSettings(true);
+      setIsLoadingAuth(true);
+      setAuthError(null);
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+      setIsAuthenticated(true);
+      setAppPublicSettings({ id: 'local', public_settings: {} });
+    } catch (error) {
+      const authErrorStatus = error?.status;
+      setUser(null);
+      setIsAuthenticated(false);
+      if (authErrorStatus === 401) {
+        setAuthError({ type: 'auth_required', message: 'Authentication required' });
+      } else {
+        setAuthError({ type: 'unknown', message: error.message || 'Authentication failed' });
+      }
+    } finally {
+      setIsLoadingPublicSettings(false);
+      setIsLoadingAuth(false);
+    }
   };
 
   const checkUserAuth = async () => {
@@ -38,8 +52,7 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(false);
       setIsAuthenticated(false);
       
-      // If user auth fails, it might be an expired token
-      if (error.status === 401 || error.status === 403) {
+      if (error?.status === 401 || error?.status === 403) {
         setAuthError({
           type: 'auth_required',
           message: 'Authentication required'
@@ -48,22 +61,18 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = (shouldRedirect = true) => {
+  const logout = async (shouldRedirect = true) => {
+    await base44.auth.logout();
     setUser(null);
     setIsAuthenticated(false);
-    
+    setAuthError({ type: 'auth_required', message: 'Authentication required' });
     if (shouldRedirect) {
-      // Use the SDK's logout method which handles token cleanup and redirect
-      base44.auth.logout(window.location.href);
-    } else {
-      // Just remove the token without redirect
-      base44.auth.logout();
+      window.location.assign('/login');
     }
   };
 
   const navigateToLogin = () => {
-    // Use the SDK's redirectToLogin method
-    base44.auth.redirectToLogin(window.location.href);
+    window.location.assign('/login');
   };
 
   return (
@@ -76,7 +85,10 @@ export const AuthProvider = ({ children }) => {
       appPublicSettings,
       logout,
       navigateToLogin,
-      checkAppState
+      checkAppState,
+      setUser,
+      setIsAuthenticated,
+      setAuthError
     }}>
       {children}
     </AuthContext.Provider>

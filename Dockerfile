@@ -3,34 +3,27 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
 
-# Install dependencies
 RUN npm ci
 
-# Copy source code
 COPY . .
 
-# Build the application
 RUN npm run build
 
-# Production stage
-FROM node:18-alpine
-
-# Install a simple static server
-RUN npm install -g serve
-
-# Copy built files from builder
-COPY --from=builder /app/dist /app/dist
+FROM node:18-alpine AS production
 
 WORKDIR /app
 
-# Default port for Railway if PORT is not injected
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server ./server
+
+ENV NODE_ENV=production
 ENV PORT=8080
 
-# Expose port
 EXPOSE 8080
 
-# Start the static server
-CMD ["sh", "-c", "serve -s dist -l ${PORT:-8080}"]
+CMD ["npm", "start"]
