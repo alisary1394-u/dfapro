@@ -59,6 +59,15 @@ export default function Portfolio() {
     setRefreshing(false);
   };
 
+  // Auto-refresh prices every 30 seconds
+  useEffect(() => {
+    if (holdings.length === 0) return;
+    const iv = setInterval(() => {
+      if (!refreshing) refreshPrices();
+    }, 30000);
+    return () => clearInterval(iv);
+  }, [holdings, refreshing]);
+
   return (
     <div className="space-y-6">
       {/* Header */}

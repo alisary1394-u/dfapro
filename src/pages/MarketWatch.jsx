@@ -340,8 +340,36 @@ export default function MarketWatch() {
     setLoadingMore(false);
   }, [market]);
 
+  // Silent refresh: updates prices in-place without clearing data or showing loaders
+  const silentRefresh = useCallback(async (list) => {
+    const BATCH_SIZE = 10;
+    let up = 0, down = 0, unchanged = 0, totalVol = 0;
+    for (let batch = 0; batch < list.length; batch += BATCH_SIZE) {
+      const chunk = list.slice(batch, batch + BATCH_SIZE);
+      try {
+        const quotes = await getBatchQuotes(chunk.map(s => s.symbol), market);
+        if (quotes) {
+          setStocks(prev => {
+            const next = [...prev];
+            chunk.forEach((s, j) => {
+              const idx = batch + j;
+              const q = quotes[s.symbol];
+              if (q && q.price != null) {
+                next[idx] = { ...next[idx], ...q };
+              }
+            });
+            return next;
+          });
+        }
+      } catch (_) {}
+    }
+    setLastUpdate(new Date());
+  }, [market]);
+
   useEffect(() => {
     loadQuotes(stockList, true);
+    const iv = setInterval(() => silentRefresh(stockList), 15000);
+    return () => clearInterval(iv);
   }, [market]);
 
   // AI signals for top stocks

@@ -61,18 +61,22 @@ export default function Dashboard() {
 
   // Fetch live data based on selected market
   useEffect(() => {
-    getTopMovers(market).then(setLiveMovers).catch(() => {});
-    getForex("USD", "SAR").then(setForex).catch(() => {});
-    getCrypto("BTC", "USD").then(setCrypto).catch(() => {});
-    // Compute live stats from top movers
-    getTopMovers(market).then(data => {
-      if (data?.gainers && data?.losers) {
-        const allStocks = [...(data.gainers || []), ...(data.losers || [])];
-        const up = allStocks.filter(s => s.change > 0).length;
-        const down = allStocks.filter(s => s.change < 0).length;
-        setLiveStats({ up, down, total: allStocks.length });
-      }
-    }).catch(() => {});
+    const fetchAll = () => {
+      getTopMovers(market).then(setLiveMovers).catch(() => {});
+      getForex("USD", "SAR").then(setForex).catch(() => {});
+      getCrypto("BTC", "USD").then(setCrypto).catch(() => {});
+      getTopMovers(market).then(data => {
+        if (data?.gainers && data?.losers) {
+          const allStocks = [...(data.gainers || []), ...(data.losers || [])];
+          const up = allStocks.filter(s => s.change > 0).length;
+          const down = allStocks.filter(s => s.change < 0).length;
+          setLiveStats({ up, down, total: allStocks.length });
+        }
+      }).catch(() => {});
+    };
+    fetchAll();
+    const iv = setInterval(fetchAll, 15000);
+    return () => clearInterval(iv);
   }, [market]);
 
   const gainers = liveMovers?.gainers?.length

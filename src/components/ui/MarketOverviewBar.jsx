@@ -14,8 +14,8 @@ export default function MarketOverviewBar({ compact = false }) {
   const [live, setLive] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await getIndices();
       if (data && data.length > 0) {
@@ -23,10 +23,14 @@ export default function MarketOverviewBar({ compact = false }) {
         setLive(true);
       }
     } catch (_) {}
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    const iv = setInterval(() => fetchData(true), 10000);
+    return () => clearInterval(iv);
+  }, []);
 
   return (
     <div className="flex items-center gap-1 flex-nowrap overflow-hidden">

@@ -302,7 +302,10 @@ function IndicatorMenu({ overlays, setOverlays, subs, setSubs, onClose }) {
 function StockRow({ stock, market, isActive, onSelect }) {
   const [quote, setQuote] = useState(null);
   useEffect(() => {
-    getQuote(stock.symbol, market).then(q => setQuote(q)).catch(() => {});
+    const fetchQuote = () => getQuote(stock.symbol, market).then(q => setQuote(q)).catch(() => {});
+    fetchQuote();
+    const iv = setInterval(fetchQuote, 15000);
+    return () => clearInterval(iv);
   }, [stock.symbol, market]);
 
   const change = quote?.change_percent;
@@ -415,13 +418,18 @@ export default function ChartBoard() {
   useEffect(() => {
     if (!selectedStock) return;
     setQuote(null);
-    getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
+    const fetchQuote = () => getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
+    fetchQuote();
+    const iv = setInterval(fetchQuote, 10000);
+    return () => clearInterval(iv);
   }, [selectedStock, market]);
 
   // ── Fetch Candles ──
   useEffect(() => {
     if (!selectedStock) return;
     fetchCandles();
+    const iv = setInterval(fetchCandles, 30000);
+    return () => clearInterval(iv);
   }, [selectedStock, market, timeframe]);
 
   const fetchCandles = async () => {
