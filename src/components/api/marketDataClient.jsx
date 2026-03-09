@@ -12,8 +12,8 @@ export const getQuote = async (symbol, market) => {
   return res.data;
 };
 
-export const getCandles = async (symbol, market) => {
-  const res = await invoke("candles", { symbol, market });
+export const getCandles = async (symbol, market, interval = 'daily') => {
+  const res = await invoke("candles", { symbol, market, interval });
   if (res.data?.error) return null;
   return res.data?.candles || null;
 };
@@ -29,8 +29,8 @@ export const getNews = async (symbol, market) => {
   return res.data?.news || [];
 };
 
-export const getTopMovers = async () => {
-  const res = await invoke("top_movers");
+export const getTopMovers = async (market = 'saudi') => {
+  const res = await invoke("top_movers", { market });
   return res.data;
 };
 
@@ -50,6 +50,12 @@ export const getIndices = async () => {
   const res = await invoke("indices");
   if (res.data?.error) return null;
   return res.data?.indices || null;
+};
+
+export const getBatchQuotes = async (symbols, market) => {
+  const res = await invoke("batch_quotes", { symbols: symbols.join(','), market });
+  if (res.data?.error) return null;
+  return res.data?.quotes || null;
 };
 
 // Simulated candles centred around a real price when API limit is hit

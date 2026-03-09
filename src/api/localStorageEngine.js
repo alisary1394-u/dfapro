@@ -98,9 +98,14 @@ const fetchRealMarketData = async (params) => {
         url = `/api/market/crypto?coin=${encodeURIComponent(coin || 'BTC')}&currency=${encodeURIComponent(currency || 'USD')}`;
         break;
       case 'top_movers':
-        return null; // no real endpoint yet, fall back to mock
+        url = `/api/market/top-movers?market=${encodeURIComponent(market || 'saudi')}`;
+        break;
       case 'news':
-        return null; // no real endpoint yet, fall back to mock
+        url = `/api/market/news?symbol=${encodeURIComponent(symbol || '')}&market=${encodeURIComponent(market || 'saudi')}`;
+        break;
+      case 'batch_quotes':
+        url = `/api/market/batch-quotes?symbols=${encodeURIComponent(params.symbols || '')}&market=${encodeURIComponent(market || 'saudi')}`;
+        break
       default:
         return null;
     }
@@ -123,6 +128,12 @@ const fetchRealMarketData = async (params) => {
       case 'forex':
         return { data };
       case 'crypto':
+        return { data };
+      case 'top_movers':
+        return { data };
+      case 'news':
+        return { data: { news: data.news || [] } };
+      case 'batch_quotes':
         return { data };
       default:
         return { data };

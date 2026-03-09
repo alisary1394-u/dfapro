@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
-import { getQuote } from "@/components/api/marketDataClient";
+import { getQuote, getBatchQuotes } from "@/components/api/marketDataClient";
 import { createPageUrl } from "@/utils";
 import { useNavigate } from "react-router-dom";
 import {
@@ -282,7 +282,7 @@ export default function MarketWatch() {
   const [loadedCount, setLoadedCount] = useState(0);
   const stockList = market === "saudi" ? SAUDI_STOCKS : US_STOCKS;
 
-  // Load quotes one by one with delay to respect Alpha Vantage rate limit (5 req/min free tier)
+  // Load quotes in batches of 10 via batch API for speed
   const loadQuotes = useCallback(async (list, isRefresh = false) => {
     setLoading(true);
     setLoadedCount(0);
@@ -291,24 +291,48 @@ export default function MarketWatch() {
 
     const updated = [...enriched];
     let up = 0, down = 0, unchanged = 0, totalVol = 0;
+    const BATCH_SIZE = 10;
 
-    for (let i = 0; i < list.length; i++) {
+    for (let batch = 0; batch < list.length; batch += BATCH_SIZE) {
+      const chunk = list.slice(batch, batch + BATCH_SIZE);
       try {
-        const res = await base44.functions.invoke("marketData", { action: "quote", symbol: list[i].symbol, market });
-        const q = res?.data;
-        if (q && q.price != null && !q.error) {
-          updated[i] = { ...updated[i], ...q };
-          if (q.change_percent > 0) up++;
-          else if (q.change_percent < 0) down++;
-          else unchanged++;
-          totalVol += q.volume || 0;
+        const symbolsStr = chunk.map(s => s.symbol);
+        const quotes = await getBatchQuotes(symbolsStr, market);
+        if (quotes) {
+          chunk.forEach((s, j) => {
+            const idx = batch + j;
+            const q = quotes[s.symbol];
+            if (q && q.price != null) {
+              updated[idx] = { ...updated[idx], ...q };
+              if (q.change_percent > 0) up++;
+              else if (q.change_percent < 0) down++;
+              else unchanged++;
+              totalVol += q.volume || 0;
+            }
+          });
           setStocks([...updated]);
-          setLoadedCount(i + 1);
+          setLoadedCount(Math.min(batch + BATCH_SIZE, list.length));
           setMarketStats({ up, down, unchanged, totalVol });
         }
-      } catch (_) {}
-      // Alpha Vantage free: 5 calls/min → wait 13s between calls
-      if (i < list.length - 1) await new Promise(r => setTimeout(r, 13000));
+      } catch (_) {
+        // Fallback: load one by one
+        for (let j = 0; j < chunk.length; j++) {
+          try {
+            const res = await base44.functions.invoke("marketData", { action: "quote", symbol: chunk[j].symbol, market });
+            const q = res?.data;
+            if (q && q.price != null && !q.error) {
+              updated[batch + j] = { ...updated[batch + j], ...q };
+              if (q.change_percent > 0) up++;
+              else if (q.change_percent < 0) down++;
+              else unchanged++;
+              totalVol += q.volume || 0;
+              setStocks([...updated]);
+              setLoadedCount(batch + j + 1);
+              setMarketStats({ up, down, unchanged, totalVol });
+            }
+          } catch (_) {}
+        }
+      }
     }
 
     setLastUpdate(new Date());

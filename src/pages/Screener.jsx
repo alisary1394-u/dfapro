@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { computeTargets } from "@/components/charts/TargetEngine";
+import { getCandles, getQuote } from "@/components/api/marketDataClient";
 import ScreenerAlertCard from "@/components/screener/ScreenerAlertCard";
 import ScreenerTable from "@/components/screener/ScreenerTable";
 import ScreenerFilters from "@/components/screener/ScreenerFilters";
@@ -40,7 +41,15 @@ const STOCKS = {
   ]
 };
 
-// ========== Data generation ==========
+// ========== Analyze stock across key TFs using real data ==========
+const KEY_TFS = [
+  { key: "5min", label: "5د", bars: 80 },
+  { key: "15min", label: "15د", bars: 80 },
+  { key: "60min", label: "1س", bars: 72 },
+  { key: "daily", label: "يوم", bars: 60 },
+];
+
+// Fallback synthetic data when API unavailable
 const generateData = (bars, basePrice, vol = 0.008) => {
   let price = basePrice;
   return Array.from({ length: bars }, (_, i) => {
@@ -55,34 +64,24 @@ const generateData = (bars, basePrice, vol = 0.008) => {
   });
 };
 
-// ========== Analyze stock across 4 key TFs ==========
-const KEY_TFS = [
-  { key: "5m", label: "5د", bars: 80, vol: 0.005 },
-  { key: "15m", label: "15د", bars: 80, vol: 0.007 },
-  { key: "1h", label: "1س", bars: 72, vol: 0.01 },
-  { key: "4h", label: "4س", bars: 60, vol: 0.015 },
-  { key: "1d", label: "يوم", bars: 60, vol: 0.02 },
-];
-
-const analyzeStock = (stock, basePrices) => {
-  const base = basePrices[stock.symbol] || (stock.market === "us" ? 80 + Math.random() * 350 : 20 + Math.random() * 100);
+const analyzeStockWithData = (stock, candlesByTf, quoteData) => {
   const tfScores = {};
-  let bullCount = 0;
   let totalScore = 0;
 
   KEY_TFS.forEach(tf => {
-    const data = generateData(tf.bars, base, tf.vol);
+    const data = candlesByTf[tf.key];
+    if (!data || data.length < 10) return;
     try {
       const result = computeTargets(data);
       if (result) {
         tfScores[tf.key] = { score: result.confluenceScore, isBull: result.isBull, label: tf.label };
-        if (result.isBull) bullCount++;
         totalScore += result.confluenceScore;
       }
     } catch {}
   });
 
-  const avgScore = totalScore / Object.keys(tfScores).length || 50;
+  const count = Object.keys(tfScores).length || 1;
+  const avgScore = totalScore / count || 50;
   const aligned = Object.values(tfScores).filter(t => t.isBull).length;
   const alignedBear = Object.values(tfScores).filter(t => !t.isBull).length;
   const totalTfs = Object.keys(tfScores).length;
@@ -90,17 +89,13 @@ const analyzeStock = (stock, basePrices) => {
   const strength = avgScore >= 78 ? "قوي جداً" : avgScore >= 65 ? "قوي" : avgScore >= 52 ? "متوسط" : avgScore >= 40 ? "ضعيف" : "ضعيف جداً";
   let signal = "محايد";
   let signalType = "neutral";
-  if (aligned >= 4) { signal = "شراء قوي"; signalType = "strong_buy"; }
-  else if (aligned >= 3) { signal = "شراء"; signalType = "buy"; }
-  else if (alignedBear >= 4) { signal = "بيع قوي"; signalType = "strong_sell"; }
-  else if (alignedBear >= 3) { signal = "بيع"; signalType = "sell"; }
-
-  const price = base * (1 + (Math.random() - 0.5) * 0.02);
+  if (aligned >= 3) { signal = aligned >= 4 ? "شراء قوي" : "شراء"; signalType = aligned >= 4 ? "strong_buy" : "buy"; }
+  else if (alignedBear >= 3) { signal = alignedBear >= 4 ? "بيع قوي" : "بيع"; signalType = alignedBear >= 4 ? "strong_sell" : "sell"; }
 
   return {
     ...stock,
-    price: parseFloat(price.toFixed(2)),
-    change: parseFloat(((Math.random() - 0.45) * 4).toFixed(2)),
+    price: quoteData?.price ?? 0,
+    change: quoteData?.change_percent ?? 0,
     avgScore: Math.round(avgScore),
     signal,
     signalType,
@@ -140,13 +135,40 @@ export default function Screener() {
     ...(market === "all" || market === "us" ? STOCKS.us : []),
   ];
 
-  const runScan = useCallback(() => {
-    const newResults = allStocks.map(stock => analyzeStock(stock, basePrices.current));
-
-    // Update base prices gradually
-    newResults.forEach(r => {
-      basePrices.current[r.symbol] = r.price;
-    });
+  const runScan = useCallback(async () => {
+    const newResults = [];
+    for (const stock of allStocks) {
+      try {
+        // Fetch real candles for each timeframe + quote
+        const [quoteData, ...candleResults] = await Promise.allSettled([
+          getQuote(stock.symbol, stock.market),
+          ...KEY_TFS.map(tf => getCandles(stock.symbol, stock.market, tf.key)),
+        ]);
+        
+        const candlesByTf = {};
+        KEY_TFS.forEach((tf, i) => {
+          const r = candleResults[i];
+          if (r.status === 'fulfilled' && r.value && r.value.length > 5) {
+            candlesByTf[tf.key] = r.value;
+          } else {
+            // Fallback to synthetic data
+            const base = quoteData.status === 'fulfilled' && quoteData.value?.price
+              ? quoteData.value.price
+              : (stock.market === 'us' ? 100 : 30);
+            candlesByTf[tf.key] = generateData(tf.bars || 60, base);
+          }
+        });
+        
+        const quote = quoteData.status === 'fulfilled' ? quoteData.value : null;
+        newResults.push(analyzeStockWithData(stock, candlesByTf, quote));
+      } catch {
+        // Full fallback
+        const base = stock.market === 'us' ? 100 : 30;
+        const candlesByTf = {};
+        KEY_TFS.forEach(tf => { candlesByTf[tf.key] = generateData(60, base); });
+        newResults.push(analyzeStockWithData(stock, candlesByTf, { price: base, change_percent: 0 }));
+      }
+    }
 
     setResults(newResults);
     setLastScan(new Date().toLocaleTimeString("ar-SA"));
@@ -176,14 +198,14 @@ export default function Screener() {
     });
   }, [allStocks, notificationsEnabled]);
 
-  // Auto-scan
+  // Auto-scan (every 60s with real data)
   useEffect(() => {
     if (!scanning) {
       clearInterval(intervalRef.current);
       return;
     }
     runScan(); // immediate
-    intervalRef.current = setInterval(runScan, 8000);
+    intervalRef.current = setInterval(runScan, 60000);
     return () => clearInterval(intervalRef.current);
   }, [scanning, runScan]);
 

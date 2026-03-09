@@ -269,6 +269,117 @@ app.get('/api/market/crypto', async (req, res) => {
   }
 });
 
+// GET /api/market/top-movers?market=saudi
+app.get('/api/market/top-movers', async (req, res) => {
+  try {
+    const { market = 'saudi' } = req.query;
+    const symbols = market === 'saudi'
+      ? ['2222.SR','1120.SR','2010.SR','7010.SR','1180.SR','2380.SR','1211.SR','1010.SR','4190.SR','2350.SR','2050.SR','1060.SR','7020.SR','7030.SR','2280.SR','4200.SR','3010.SR','8010.SR','2082.SR','4030.SR']
+      : ['AAPL','MSFT','NVDA','TSLA','AMZN','META','GOOGL','AMD','NFLX','JPM','BAC','V','WMT','DIS','INTC','COIN','PLTR','SOFI','CRM','ORCL'];
+    
+    const results = await Promise.allSettled(
+      symbols.map(s => yfFetch(`${YF_BASE}/${encodeURIComponent(s)}?interval=1d&range=2d`))
+    );
+    
+    const stocks = results.map((r, i) => {
+      if (r.status !== 'fulfilled') return null;
+      const meta = r.value.chart?.result?.[0]?.meta;
+      if (!meta) return null;
+      const price = meta.regularMarketPrice ?? 0;
+      const prev = meta.previousClose ?? meta.chartPreviousClose ?? price;
+      const change = +(price - prev).toFixed(2);
+      const changePct = prev !== 0 ? +((change / prev) * 100).toFixed(2) : 0;
+      const rawSymbol = symbols[i].replace('.SR', '');
+      return {
+        symbol: rawSymbol,
+        name: meta.shortName || rawSymbol,
+        price: +price.toFixed(2),
+        change: changePct,
+        market,
+      };
+    }).filter(Boolean);
+    
+    const sorted = [...stocks].sort((a, b) => b.change - a.change);
+    res.json({
+      gainers: sorted.filter(s => s.change > 0).slice(0, 10),
+      losers: sorted.filter(s => s.change < 0).sort((a, b) => a.change - b.change).slice(0, 10),
+    });
+  } catch (err) {
+    console.error('Top movers error:', err.message);
+    res.json({ gainers: [], losers: [] });
+  }
+});
+
+// GET /api/market/news?symbol=2222&market=saudi
+app.get('/api/market/news', async (req, res) => {
+  try {
+    const { symbol, market = 'saudi' } = req.query;
+    const ySymbol = symbol ? toYahooSymbol(symbol, market) : (market === 'saudi' ? '^TASI.SR' : '^GSPC');
+    
+    const data = await yfFetch(`${YF_SEARCH}?q=${encodeURIComponent(ySymbol)}&newsCount=10&quotesCount=0`);
+    const news = (data.news || []).map(item => ({
+      title: item.title || '',
+      source: item.publisher || '',
+      date: item.providerPublishTime ? new Date(item.providerPublishTime * 1000).toISOString() : new Date().toISOString(),
+      url: item.link || '#',
+      thumbnail: item.thumbnail?.resolutions?.[0]?.url || '',
+    }));
+    
+    res.json({ news });
+  } catch (err) {
+    console.error('News error:', err.message);
+    res.json({ news: [] });
+  }
+});
+
+// GET /api/market/batch-quotes?symbols=AAPL,MSFT,NVDA&market=us
+app.get('/api/market/batch-quotes', async (req, res) => {
+  try {
+    const { symbols: symbolsStr, market = 'saudi' } = req.query;
+    if (!symbolsStr) return res.json({ quotes: {} });
+    
+    const symbolList = symbolsStr.split(',').slice(0, 30);
+    const results = await Promise.allSettled(
+      symbolList.map(s => {
+        const ySymbol = toYahooSymbol(s.trim(), market);
+        return yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=1d&range=2d`);
+      })
+    );
+    
+    const quotes = {};
+    results.forEach((r, i) => {
+      const sym = symbolList[i].trim();
+      if (r.status !== 'fulfilled') { quotes[sym] = null; return; }
+      const meta = r.value.chart?.result?.[0]?.meta;
+      const q = r.value.chart?.result?.[0]?.indicators?.quote?.[0];
+      if (!meta) { quotes[sym] = null; return; }
+      const price = meta.regularMarketPrice ?? 0;
+      const prev = meta.previousClose ?? meta.chartPreviousClose ?? price;
+      const change = +(price - prev).toFixed(2);
+      const changePct = prev !== 0 ? +((change / prev) * 100).toFixed(2) : 0;
+      const volumes = q?.volume?.filter(v => v != null) || [];
+      const highs = q?.high?.filter(v => v != null) || [];
+      const lows = q?.low?.filter(v => v != null) || [];
+      quotes[sym] = {
+        price: +price.toFixed(2),
+        change,
+        change_percent: changePct,
+        volume: volumes.length > 0 ? volumes[volumes.length - 1] : 0,
+        high: highs.length > 0 ? Math.max(...highs) : price,
+        low: lows.length > 0 ? Math.min(...lows) : price,
+        open: prev,
+        name: meta.shortName || sym,
+        currency: meta.currency || (market === 'saudi' ? 'SAR' : 'USD'),
+      };
+    });
+    
+    res.json({ quotes });
+  } catch (err) {
+    console.error('Batch quotes error:', err.message);
+    res.json({ quotes: {} });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════
 
 const publicUser = (user) => ({

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { getTopMovers, getForex, getCrypto } from "@/components/api/marketDataClient";
+import { getTopMovers, getForex, getCrypto, getBatchQuotes } from "@/components/api/marketDataClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import MarketOverviewBar from "@/components/ui/MarketOverviewBar";
@@ -18,35 +18,8 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell
 } from "recharts";
 
-const sentimentByMarket = {
-  saudi: [
-    { name: "إيجابي", value: 45, color: "#10b981" },
-    { name: "محايد", value: 30, color: "#d4a843" },
-    { name: "سلبي", value: 25, color: "#ef4444" },
-  ],
-  us: [
-    { name: "إيجابي", value: 52, color: "#10b981" },
-    { name: "محايد", value: 27, color: "#d4a843" },
-    { name: "سلبي", value: 21, color: "#ef4444" },
-  ],
-};
-
-const volumeData = [
-  { month: 'يناير',   saudi: 4200, us: 7800 },
-  { month: 'فبراير',  saudi: 5100, us: 8200 },
-  { month: 'مارس',    saudi: 3800, us: 6900 },
-  { month: 'أبريل',   saudi: 6200, us: 9100 },
-  { month: 'مايو',    saudi: 5800, us: 8700 },
-  { month: 'يونيو',   saudi: 4900, us: 7600 },
-  { month: 'يوليو',   saudi: 6800, us: 10200 },
-  { month: 'أغسطس',   saudi: 7200, us: 11000 },
-  { month: 'سبتمبر',  saudi: 5500, us: 8900 },
-  { month: 'أكتوبر',  saudi: 6100, us: 9400 },
-  { month: 'نوفمبر',  saudi: 7500, us: 11800 },
-  { month: 'ديسمبر',  saudi: 8200, us: 12500 },
-];
-
-const topGainersByMarket = {
+// Fallback static data (used only when API is unavailable)
+const fallbackGainers = {
   saudi: [
     { symbol: "2222", name: "أرامكو", price: 32.50, change: 5.23, market: "saudi" },
     { symbol: "1120", name: "الراجحي", price: 95.40, change: 3.89, market: "saudi" },
@@ -60,42 +33,16 @@ const topGainersByMarket = {
     { symbol: "MSFT", name: "Microsoft", price: 415.20, change: 1.95, market: "us" },
   ],
 };
-
-const topLosersByMarket = {
+const fallbackLosers = {
   saudi: [
     { symbol: "2350", name: "كيان", price: 12.30, change: -4.56, market: "saudi" },
     { symbol: "2050", name: "صافولا", price: 28.90, change: -1.89, market: "saudi" },
     { symbol: "4030", name: "الدريس", price: 18.20, change: -1.50, market: "saudi" },
-    { symbol: "4031", name: "مسك", price: 55.40, change: -1.20, market: "saudi" },
   ],
   us: [
     { symbol: "META", name: "Meta", price: 485.20, change: -2.34, market: "us" },
     { symbol: "NFLX", name: "Netflix", price: 612.40, change: -1.23, market: "us" },
     { symbol: "AMZN", name: "Amazon", price: 185.30, change: -0.98, market: "us" },
-    { symbol: "GOOGL", name: "Alphabet", price: 175.80, change: -0.75, market: "us" },
-  ],
-};
-
-const sectorsByMarket = {
-  saudi: [
-    { sector: "البنوك", change: 2.3 },
-    { sector: "البتروكيماويات", change: -1.2 },
-    { sector: "التأمين", change: 4.5 },
-    { sector: "الاتصالات", change: 1.8 },
-    { sector: "الطاقة", change: -0.5 },
-    { sector: "العقار", change: 0.9 },
-    { sector: "الرعاية الصحية", change: 2.1 },
-    { sector: "التقنية", change: 3.2 },
-  ],
-  us: [
-    { sector: "Technology", change: 1.8 },
-    { sector: "Healthcare", change: -0.7 },
-    { sector: "Financials", change: 2.5 },
-    { sector: "Energy", change: -1.4 },
-    { sector: "Consumer", change: 0.6 },
-    { sector: "Industrials", change: 1.1 },
-    { sector: "Real Estate", change: -0.3 },
-    { sector: "Utilities", change: 0.4 },
   ],
 };
 
@@ -110,22 +57,75 @@ export default function Dashboard() {
   const [liveMovers, setLiveMovers] = useState(null);
   const [forex, setForex] = useState(null);
   const [crypto, setCrypto] = useState(null);
+  const [liveStats, setLiveStats] = useState(null);
 
+  // Fetch live data based on selected market
   useEffect(() => {
-    getTopMovers().then(setLiveMovers).catch(() => {});
+    getTopMovers(market).then(setLiveMovers).catch(() => {});
     getForex("USD", "SAR").then(setForex).catch(() => {});
     getCrypto("BTC", "USD").then(setCrypto).catch(() => {});
-  }, []);
+    // Compute live stats from top movers
+    getTopMovers(market).then(data => {
+      if (data?.gainers && data?.losers) {
+        const allStocks = [...(data.gainers || []), ...(data.losers || [])];
+        const up = allStocks.filter(s => s.change > 0).length;
+        const down = allStocks.filter(s => s.change < 0).length;
+        setLiveStats({ up, down, total: allStocks.length });
+      }
+    }).catch(() => {});
+  }, [market]);
 
   const gainers = liveMovers?.gainers?.length
-    ? liveMovers.gainers.filter(s => !s.market || s.market === market)
-    : topGainersByMarket[market];
+    ? liveMovers.gainers.slice(0, 4)
+    : fallbackGainers[market];
   const losers = liveMovers?.losers?.length
-    ? liveMovers.losers.filter(s => !s.market || s.market === market)
-    : topLosersByMarket[market];
+    ? liveMovers.losers.slice(0, 4)
+    : fallbackLosers[market];
   const isLive = !!liveMovers?.gainers?.length;
-  const sectorPerformance = sectorsByMarket[market];
-  const marketSentimentData = sentimentByMarket[market];
+
+  // Compute sentiment from real movers data
+  const marketSentimentData = (() => {
+    if (!liveMovers?.gainers) {
+      return [
+        { name: "إيجابي", value: 45, color: "#10b981" },
+        { name: "محايد", value: 30, color: "#d4a843" },
+        { name: "سلبي", value: 25, color: "#ef4444" },
+      ];
+    }
+    const all = [...(liveMovers.gainers || []), ...(liveMovers.losers || [])];
+    const up = all.filter(s => s.change > 0).length;
+    const down = all.filter(s => s.change < 0).length;
+    const neutral = all.length - up - down;
+    const total = all.length || 1;
+    return [
+      { name: "إيجابي", value: Math.round((up / total) * 100), color: "#10b981" },
+      { name: "محايد", value: Math.round((neutral / total) * 100), color: "#d4a843" },
+      { name: "سلبي", value: Math.round((down / total) * 100), color: "#ef4444" },
+    ];
+  })();
+
+  // Compute sector performance from movers (group by name pattern)
+  const sectorPerformance = (() => {
+    if (!liveMovers?.gainers) {
+      return market === 'saudi'
+        ? [{ sector: "البنوك", change: 2.3 }, { sector: "الطاقة", change: -0.5 }, { sector: "الاتصالات", change: 1.8 }]
+        : [{ sector: "Technology", change: 1.8 }, { sector: "Financials", change: 2.5 }, { sector: "Healthcare", change: -0.7 }];
+    }
+    const all = [...(liveMovers.gainers || []), ...(liveMovers.losers || [])];
+    return all.slice(0, 8).map(s => ({
+      sector: s.name || s.symbol,
+      change: s.change || 0,
+    }));
+  })();
+
+  // Volume chart: use movers data as proxy
+  const volumeData = (() => {
+    const base = gainers?.concat(losers || []) || [];
+    return base.slice(0, 10).map(s => ({
+      month: s.name || s.symbol,
+      [market]: Math.abs(s.change || 0) * 100,
+    }));
+  })();
 
   const handleStockClick = (stock) => {
     navigate(createPageUrl("StockAnalysis") + `?symbol=${stock.symbol}&market=${stock.market}`);
@@ -173,7 +173,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-[10px] text-[#475569]">BTC/USD</p>
-              <p className="text-sm font-black text-white">${crypto.rate?.toLocaleString()}</p>
+              <p className="text-sm font-black text-white">${(crypto.price ?? crypto.rate)?.toLocaleString()}</p>
             </div>
           </div>
         )}
@@ -182,17 +182,12 @@ export default function Dashboard() {
 
     quick_stats: (
       <div key="quick_stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {(market === "saudi" ? [
-          { label: "أسهم صاعدة", value: "127", sub: "من 200 سهم", icon: TrendingUp, color: "#10b981", accent: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.15)" },
-          { label: "أسهم هابطة", value: "89", sub: "من 200 سهم", icon: TrendingDown, color: "#ef4444", accent: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.15)" },
-          { label: "حجم التداول", value: "8.3B", sub: "ريال سعودي", icon: BarChart3, color: "#3b82f6", accent: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.15)" },
-          { label: "الأكثر نشاطاً", value: "2222", sub: "أرامكو", icon: Activity, color: "#d4a843", accent: "rgba(212,168,67,0.08)", border: "rgba(212,168,67,0.15)" },
-        ] : [
-          { label: "أسهم صاعدة", value: "312", sub: "من 500 سهم", icon: TrendingUp, color: "#10b981", accent: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.15)" },
-          { label: "أسهم هابطة", value: "198", sub: "من 500 سهم", icon: TrendingDown, color: "#ef4444", accent: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.15)" },
-          { label: "حجم التداول", value: "42.7B", sub: "دولار", icon: BarChart3, color: "#3b82f6", accent: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.15)" },
-          { label: "الأكثر نشاطاً", value: "NVDA", sub: "إنفيديا", icon: Activity, color: "#d4a843", accent: "rgba(212,168,67,0.08)", border: "rgba(212,168,67,0.15)" },
-        ]).map((stat) => (
+        {[
+          { label: "أسهم صاعدة", value: liveStats ? String(liveStats.up) : "—", sub: liveStats ? `من ${liveStats.total} سهم` : "جاري التحميل", icon: TrendingUp, color: "#10b981", accent: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.15)" },
+          { label: "أسهم هابطة", value: liveStats ? String(liveStats.down) : "—", sub: liveStats ? `من ${liveStats.total} سهم` : "جاري التحميل", icon: TrendingDown, color: "#ef4444", accent: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.15)" },
+          { label: "الأكثر ارتفاعاً", value: gainers?.[0]?.symbol || "—", sub: gainers?.[0]?.name || "", icon: Activity, color: "#d4a843", accent: "rgba(212,168,67,0.08)", border: "rgba(212,168,67,0.15)" },
+          { label: "الأكثر انخفاضاً", value: losers?.[0]?.symbol || "—", sub: losers?.[0]?.name || "", icon: BarChart3, color: "#3b82f6", accent: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.15)" },
+        ].map((stat) => (
           <div
             key={stat.label}
             className="relative overflow-hidden rounded-2xl p-5 transition-all duration-200 hover:scale-[1.02]"
