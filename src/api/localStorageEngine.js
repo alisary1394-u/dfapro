@@ -71,7 +71,68 @@ const createEntityProxy = (entityName) => ({
   },
 });
 
-// ─── Mock Market Data ──────────────────────────────────────────────────────
+// ─── Real Market Data via Server API ───────────────────────────────────────
+
+const fetchRealMarketData = async (params) => {
+  const { action, symbol, market, interval, limit, from, to, coin, currency } = params;
+
+  try {
+    let url;
+    switch (action) {
+      case 'quote':
+        url = `/api/market/quote?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}`;
+        break;
+      case 'candles':
+        url = `/api/market/candles?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}&interval=${encodeURIComponent(interval || 'daily')}&limit=${limit || 365}`;
+        break;
+      case 'overview':
+        url = `/api/market/overview?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}`;
+        break;
+      case 'indices':
+        url = '/api/market/indices';
+        break;
+      case 'forex':
+        url = `/api/market/forex?from=${encodeURIComponent(from || 'USD')}&to=${encodeURIComponent(to || 'SAR')}`;
+        break;
+      case 'crypto':
+        url = `/api/market/crypto?coin=${encodeURIComponent(coin || 'BTC')}&currency=${encodeURIComponent(currency || 'USD')}`;
+        break;
+      case 'top_movers':
+        return null; // no real endpoint yet, fall back to mock
+      case 'news':
+        return null; // no real endpoint yet, fall back to mock
+      default:
+        return null;
+    }
+
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.error) return null;
+
+    // Wrap response to match expected format
+    switch (action) {
+      case 'quote':
+        return { data };
+      case 'candles':
+        return { data: { candles: data.candles || [] } };
+      case 'overview':
+        return { data };
+      case 'indices':
+        return { data };
+      case 'forex':
+        return { data };
+      case 'crypto':
+        return { data };
+      default:
+        return { data };
+    }
+  } catch {
+    return null; // network error → fall back to mock
+  }
+};
+
+// ─── Mock Market Data (fallback) ──────────────────────────────────────────
 
 const MOCK_STOCKS = {
   saudi: {
@@ -226,7 +287,12 @@ export const createOfflineClient = () => {
     auth: mockAuth,
     functions: {
       invoke: async (funcName, params = {}) => {
-        if (funcName === "marketData") return handleMarketDataInvoke(params);
+        if (funcName === "marketData") {
+          // Try real API first, fall back to mock
+          const realResult = await fetchRealMarketData(params);
+          if (realResult) return realResult;
+          return handleMarketDataInvoke(params);
+        }
         if (funcName === "brokerIntegration") return handleBrokerInvoke(params);
         return { data: {} };
       },

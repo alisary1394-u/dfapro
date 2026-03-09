@@ -41,6 +41,236 @@ const app = express();
 app.use(express.json());
 app.use(cookieParser());
 
+// ═══════════════════════════════════════════════════════════════
+// MARKET DATA PROXY (Yahoo Finance)
+// ═══════════════════════════════════════════════════════════════
+const YF_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
+const YF_SEARCH = 'https://query1.finance.yahoo.com/v1/finance/search';
+const YF_QUOTE = 'https://query2.finance.yahoo.com/v10/finance/quoteSummary';
+
+const toYahooSymbol = (symbol, market) => {
+  if (market === 'saudi') {
+    if (['TASI', 'MI30', 'TFNI'].includes(symbol)) return `^TASI.SR`;
+    return /^\d+$/.test(symbol) ? `${symbol}.SR` : symbol;
+  }
+  if (['SPX', 'SP500'].includes(symbol)) return '^GSPC';
+  if (['NDX', 'NASDAQ'].includes(symbol)) return '^IXIC';
+  if (['DJI', 'DJIA'].includes(symbol)) return '^DJI';
+  return symbol;
+};
+
+const intervalMap = {
+  '1min': '1m', '5min': '5m', '15min': '15m', '30min': '30m', '60min': '60m',
+  'daily': '1d', 'weekly': '1wk', 'monthly': '1mo',
+};
+
+const rangeMap = {
+  '1m': '1d', '5m': '5d', '15m': '5d', '30m': '1mo', '60m': '1mo',
+  '1d': '1y', '1wk': '5y', '1mo': 'max',
+};
+
+const yfFetch = async (url) => {
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json',
+    },
+  });
+  if (!res.ok) throw new Error(`Yahoo Finance ${res.status}`);
+  return res.json();
+};
+
+// GET /api/market/quote?symbol=2222&market=saudi
+app.get('/api/market/quote', async (req, res) => {
+  try {
+    const { symbol, market = 'saudi' } = req.query;
+    if (!symbol) return res.status(400).json({ error: 'symbol required' });
+    
+    const ySymbol = toYahooSymbol(symbol, market);
+    const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=1d&range=2d`);
+    const meta = data.chart?.result?.[0]?.meta;
+    const quotes = data.chart?.result?.[0]?.indicators?.quote?.[0];
+    
+    if (!meta) return res.json({ price: 0, change: 0, change_percent: 0, volume: 0 });
+    
+    const price = meta.regularMarketPrice ?? 0;
+    const prevClose = meta.previousClose ?? meta.chartPreviousClose ?? price;
+    const change = +(price - prevClose).toFixed(2);
+    const changePct = prevClose !== 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+    
+    const closePrices = quotes?.close?.filter(v => v != null) || [];
+    const highPrices = quotes?.high?.filter(v => v != null) || [];
+    const lowPrices = quotes?.low?.filter(v => v != null) || [];
+    const volumes = quotes?.volume?.filter(v => v != null) || [];
+    
+    res.json({
+      price,
+      change,
+      change_percent: changePct,
+      volume: volumes.length > 0 ? volumes[volumes.length - 1] : 0,
+      high: highPrices.length > 0 ? Math.max(...highPrices) : price,
+      low: lowPrices.length > 0 ? Math.min(...lowPrices) : price,
+      name: meta.shortName || meta.symbol || symbol,
+      currency: meta.currency || (market === 'saudi' ? 'SAR' : 'USD'),
+    });
+  } catch (err) {
+    console.error('Quote error:', err.message);
+    res.status(502).json({ error: 'Failed to fetch quote' });
+  }
+});
+
+// GET /api/market/candles?symbol=2222&market=saudi&interval=daily&limit=365
+app.get('/api/market/candles', async (req, res) => {
+  try {
+    const { symbol, market = 'saudi', interval = 'daily' } = req.query;
+    if (!symbol) return res.status(400).json({ error: 'symbol required' });
+    
+    const ySymbol = toYahooSymbol(symbol, market);
+    const yfInterval = intervalMap[interval] || '1d';
+    const range = rangeMap[yfInterval] || '1y';
+    
+    const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=${yfInterval}&range=${range}`);
+    const result = data.chart?.result?.[0];
+    
+    if (!result?.timestamp) return res.json({ candles: [] });
+    
+    const timestamps = result.timestamp;
+    const q = result.indicators.quote[0];
+    const isIntraday = ['1m', '5m', '15m', '30m', '60m'].includes(yfInterval);
+    
+    const candles = timestamps.map((t, i) => {
+      if (q.open[i] == null || q.close[i] == null) return null;
+      return {
+        time: isIntraday ? t : new Date(t * 1000).toISOString().substring(0, 10),
+        open: +q.open[i].toFixed(2),
+        high: +q.high[i].toFixed(2),
+        low: +q.low[i].toFixed(2),
+        close: +q.close[i].toFixed(2),
+        volume: q.volume[i] || 0,
+      };
+    }).filter(Boolean);
+    
+    res.json({ candles });
+  } catch (err) {
+    console.error('Candles error:', err.message);
+    res.status(502).json({ error: 'Failed to fetch candles' });
+  }
+});
+
+// GET /api/market/overview?symbol=2222&market=saudi
+app.get('/api/market/overview', async (req, res) => {
+  try {
+    const { symbol, market = 'saudi' } = req.query;
+    if (!symbol) return res.status(400).json({ error: 'symbol required' });
+    
+    const ySymbol = toYahooSymbol(symbol, market);
+    const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=1d&range=1y`);
+    const meta = data.chart?.result?.[0]?.meta;
+    const quotes = data.chart?.result?.[0]?.indicators?.quote?.[0];
+    
+    if (!meta) return res.json({});
+    
+    const allHighs = quotes?.high?.filter(v => v != null) || [];
+    const allLows = quotes?.low?.filter(v => v != null) || [];
+    
+    res.json({
+      name: meta.shortName || symbol,
+      exchange: meta.exchangeName || '',
+      currency: meta.currency || '',
+      high_52w: allHighs.length > 0 ? +Math.max(...allHighs).toFixed(2) : 0,
+      low_52w: allLows.length > 0 ? +Math.min(...allLows).toFixed(2) : 0,
+      market_cap: meta.marketCap || '',
+    });
+  } catch (err) {
+    console.error('Overview error:', err.message);
+    res.status(502).json({ error: 'Failed to fetch overview' });
+  }
+});
+
+// GET /api/market/search?q=aramco
+app.get('/api/market/search', async (req, res) => {
+  try {
+    const q = req.query.q;
+    if (!q) return res.json({ results: [] });
+    
+    const data = await yfFetch(`${YF_SEARCH}?q=${encodeURIComponent(q)}&newsCount=0&quotesCount=10`);
+    const results = (data.quotes || []).map(item => ({
+      symbol: item.symbol,
+      name: item.shortname || item.longname || item.symbol,
+      exchange: item.exchange,
+      type: item.quoteType,
+    }));
+    
+    res.json({ results });
+  } catch (err) {
+    console.error('Search error:', err.message);
+    res.json({ results: [] });
+  }
+});
+
+// GET /api/market/indices
+app.get('/api/market/indices', async (req, res) => {
+  try {
+    const symbols = ['^TASI.SR', '^GSPC', '^IXIC', '^DJI'];
+    const names = ['تاسي', 'S&P 500', 'ناسداك', 'داو جونز'];
+    
+    const results = await Promise.allSettled(
+      symbols.map(s => yfFetch(`${YF_BASE}/${encodeURIComponent(s)}?interval=1d&range=2d`))
+    );
+    
+    const indices = results.map((r, i) => {
+      if (r.status !== 'fulfilled') return { name: names[i], value: 0, change: 0 };
+      const meta = r.value.chart?.result?.[0]?.meta;
+      if (!meta) return { name: names[i], value: 0, change: 0 };
+      const price = meta.regularMarketPrice ?? 0;
+      const prev = meta.previousClose ?? meta.chartPreviousClose ?? price;
+      return {
+        name: names[i],
+        value: +price.toFixed(2),
+        change: prev !== 0 ? +(((price - prev) / prev) * 100).toFixed(2) : 0,
+      };
+    });
+    
+    res.json({ indices });
+  } catch (err) {
+    console.error('Indices error:', err.message);
+    res.json({ indices: [] });
+  }
+});
+
+// GET /api/market/forex?from=USD&to=SAR
+app.get('/api/market/forex', async (req, res) => {
+  try {
+    const { from = 'USD', to = 'SAR' } = req.query;
+    const symbol = `${from}${to}=X`;
+    const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(symbol)}?interval=1d&range=2d`);
+    const meta = data.chart?.result?.[0]?.meta;
+    res.json({ rate: meta?.regularMarketPrice ?? 0, from, to });
+  } catch (err) {
+    console.error('Forex error:', err.message);
+    res.json({ rate: from === 'USD' && to === 'SAR' ? 3.75 : 1.0, from: req.query.from, to: req.query.to });
+  }
+});
+
+// GET /api/market/crypto?coin=BTC&currency=USD
+app.get('/api/market/crypto', async (req, res) => {
+  try {
+    const { coin = 'BTC', currency = 'USD' } = req.query;
+    const symbol = `${coin}-${currency}`;
+    const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(symbol)}?interval=1d&range=2d`);
+    const meta = data.chart?.result?.[0]?.meta;
+    const price = meta?.regularMarketPrice ?? 0;
+    const prev = meta?.previousClose ?? meta?.chartPreviousClose ?? price;
+    const change24h = prev !== 0 ? +(((price - prev) / prev) * 100).toFixed(2) : 0;
+    res.json({ price, change_24h: change24h, coin, currency });
+  } catch (err) {
+    console.error('Crypto error:', err.message);
+    res.json({ price: 0, change_24h: 0, coin: req.query.coin, currency: req.query.currency });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+
 const publicUser = (user) => ({
   id: user.id,
   name: user.name,

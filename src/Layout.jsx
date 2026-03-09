@@ -66,7 +66,7 @@ function NavGroup({ group, currentPageName, onNavigate, defaultOpen = true }) {
     <div className="mb-1">
       <button
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-bold text-[#475569] hover:text-[#64748b] transition-colors tracking-widest uppercase"
+        className="w-full flex items-center justify-between px-3 py-2 text-[13px] font-black text-[#94a3b8] hover:text-white transition-colors tracking-wide"
       >
         <span>{group.label}</span>
         {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -92,7 +92,7 @@ function NavGroup({ group, currentPageName, onNavigate, defaultOpen = true }) {
                   <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-gradient-to-b from-[#d4a843] to-[#b8922f] rounded-full" />
                 )}
                 <item.icon className={`w-4 h-4 shrink-0 transition-colors ${isActive ? 'text-[#d4a843]' : 'group-hover:text-[#94a3b8]'}`} />
-                <span className="text-sm font-medium leading-none">{item.name}</span>
+                <span className="text-xs font-medium leading-none">{item.name}</span>
                 {isActive && (
                   <div className="mr-auto flex items-center">
                     <div className="w-1.5 h-1.5 rounded-full bg-[#d4a843] animate-pulse" />
@@ -184,7 +184,7 @@ export default function Layout({ children, currentPageName }) {
       `}</style>
 
       {/* ── Desktop Top Bar ── */}
-      <div className="hidden lg:flex fixed top-0 z-40 items-center" style={{ right: 'var(--sidebar-w)', left: '12rem', height: '48px' }}>
+      <div className="hidden lg:flex fixed top-0 z-40 items-center" style={{ right: 'var(--sidebar-w)', left: ['StockAnalysis', 'OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) ? '12rem' : '0', height: '48px' }}>
         <div className="w-full h-full glass border-b border-[#1a2540] px-4 flex items-center gap-3">
           <div className="flex-1 min-w-0">
             <MarketOverviewBar compact />
@@ -289,13 +289,15 @@ export default function Layout({ children, currentPageName }) {
         </div>
       </aside>
 
-      {/* ── Stock Sidebar (desktop only) ── */}
-      <div className="hidden lg:block">
-        <StockSidebar currentPageName={currentPageName} />
-      </div>
+      {/* ── Stock Sidebar (desktop only, analysis pages) ── */}
+      {['StockAnalysis', 'OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) && (
+        <div className="hidden lg:block">
+          <StockSidebar currentPageName={currentPageName} />
+        </div>
+      )}
 
       {/* ── Main Content ── */}
-      <main className="lg:mr-[17rem] lg:ml-48 min-h-screen pt-14 lg:pt-12">
+      <main className={`lg:mr-[17rem] min-h-screen pt-14 lg:pt-12 ${['StockAnalysis', 'OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) ? 'lg:ml-48' : 'lg:ml-0'}`}>
         <div className="p-4 md:p-5 lg:p-7 animate-fade-in-up">
           {children}
         </div>
