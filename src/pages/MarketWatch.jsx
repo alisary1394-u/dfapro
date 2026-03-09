@@ -185,12 +185,13 @@ function AiMarketInsight({ market, stocks }) {
 function StockTableRow({ stock, onNavigate, aiSignals }) {
   const isUp = stock.change_percent >= 0;
   const aiSignal = aiSignals?.[stock.symbol];
+  const flash = stock._flash;
 
   const signalColor = aiSignal === "شراء" ? "text-emerald-400" : aiSignal === "بيع" ? "text-red-400" : "text-[#64748b]";
 
   return (
     <tr
-      className="border-b border-[#0a0e17] hover:bg-[#1a2235] cursor-pointer transition-colors group"
+      className={`border-b border-[#0a0e17] hover:bg-[#1a2235] cursor-pointer transition-colors group ${flash === "up" ? "price-flash-up" : flash === "down" ? "price-flash-down" : ""}`}
       onClick={() => onNavigate(stock)}
     >
       <td className="px-2 py-2 text-right">
@@ -201,7 +202,7 @@ function StockTableRow({ stock, onNavigate, aiSignals }) {
           </div>
         </div>
       </td>
-      <td className={`px-2 py-2 text-center text-[11px] font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
+      <td className={`px-2 py-2 text-center text-[11px] font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"} ${flash ? "price-tick-" + flash : ""}`}>
         {stock.price != null ? stock.price.toFixed(2) : <span className="text-[#374151]">—</span>}
       </td>
       <td className={`px-2 py-2 text-center text-[11px] font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
@@ -355,10 +356,28 @@ export default function MarketWatch() {
               const idx = batch + j;
               const q = quotes[s.symbol];
               if (q && q.price != null) {
-                next[idx] = { ...next[idx], ...q };
+                const oldPrice = next[idx]?.price;
+                const flash = oldPrice != null && q.price !== oldPrice ? (q.price > oldPrice ? "up" : "down") : null;
+                next[idx] = { ...next[idx], ...q, _flash: flash };
               }
             });
+            // Clear flashes after animation
+            setTimeout(() => setStocks(p => p.map(s => ({ ...s, _flash: null }))), 800);
             return next;
+          });
+          // Update stats too
+          setStocks(prev => {
+            let u = 0, d = 0, uc = 0, tv = 0;
+            prev.forEach(s => {
+              if (s.price != null) {
+                if (s.change_percent > 0) u++;
+                else if (s.change_percent < 0) d++;
+                else uc++;
+                tv += s.volume || 0;
+              }
+            });
+            setMarketStats({ up: u, down: d, unchanged: uc, totalVol: tv });
+            return prev;
           });
         }
       } catch (_) {}
@@ -368,7 +387,7 @@ export default function MarketWatch() {
 
   useEffect(() => {
     loadQuotes(stockList, true);
-    const iv = setInterval(() => silentRefresh(stockList), 15000);
+    const iv = setInterval(() => silentRefresh(stockList), 5000);
     return () => clearInterval(iv);
   }, [market]);
 

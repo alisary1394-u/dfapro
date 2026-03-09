@@ -301,10 +301,19 @@ function IndicatorMenu({ overlays, setOverlays, subs, setSubs, onClose }) {
 // ═══════════════════════════════════════════════════════════════
 function StockRow({ stock, market, isActive, onSelect }) {
   const [quote, setQuote] = useState(null);
+  const [flash, setFlash] = useState(null);
+  const prevPrice = useRef(null);
   useEffect(() => {
-    const fetchQuote = () => getQuote(stock.symbol, market).then(q => setQuote(q)).catch(() => {});
+    const fetchQuote = () => getQuote(stock.symbol, market).then(q => {
+      if (q && prevPrice.current != null && q.price !== prevPrice.current) {
+        setFlash(q.price > prevPrice.current ? "up" : "down");
+        setTimeout(() => setFlash(null), 800);
+      }
+      if (q) prevPrice.current = q.price;
+      setQuote(q);
+    }).catch(() => {});
     fetchQuote();
-    const iv = setInterval(fetchQuote, 15000);
+    const iv = setInterval(fetchQuote, 5000);
     return () => clearInterval(iv);
   }, [stock.symbol, market]);
 
@@ -314,7 +323,7 @@ function StockRow({ stock, market, isActive, onSelect }) {
   return (
     <button onClick={() => onSelect(stock)}
       className={`w-full flex items-center justify-between px-3 py-2 border-b border-[#060a11] text-right transition-all ${
-        isActive ? "bg-[#d4a843]/12 border-r-2 border-r-[#d4a843]" : "hover:bg-[#0d1420]"}`}>
+        isActive ? "bg-[#d4a843]/12 border-r-2 border-r-[#d4a843]" : "hover:bg-[#0d1420]"} ${flash ? "price-flash-" + flash : ""}`}>
       <div className="text-right flex-1 min-w-0">
         <div className={`text-[11px] font-black ${isActive ? "text-[#d4a843]" : "text-white"}`}>{stock.symbol}</div>
         <div className="text-[9px] text-[#475569] truncate">{stock.name}</div>
@@ -322,7 +331,7 @@ function StockRow({ stock, market, isActive, onSelect }) {
       <div className="text-left ml-1 shrink-0">
         {quote ? (
           <>
-            <div className="text-[11px] font-bold text-white">{quote.price?.toFixed(2)}</div>
+            <div className={`text-[11px] font-bold text-white ${flash ? "price-tick-" + flash : ""}`}>{quote.price?.toFixed(2)}</div>
             <div className={`text-[9px] font-bold ${isUp ? "text-[#00c087]" : "text-[#ff4757]"}`}>
               {isUp ? "▲" : "▼"} {Math.abs(change || 0).toFixed(2)}%
             </div>
@@ -420,7 +429,7 @@ export default function ChartBoard() {
     setQuote(null);
     const fetchQuote = () => getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
     fetchQuote();
-    const iv = setInterval(fetchQuote, 10000);
+    const iv = setInterval(fetchQuote, 3000);
     return () => clearInterval(iv);
   }, [selectedStock, market]);
 
@@ -428,7 +437,7 @@ export default function ChartBoard() {
   useEffect(() => {
     if (!selectedStock) return;
     fetchCandles();
-    const iv = setInterval(fetchCandles, 30000);
+    const iv = setInterval(fetchCandles, 10000);
     return () => clearInterval(iv);
   }, [selectedStock, market, timeframe]);
 

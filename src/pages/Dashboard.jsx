@@ -75,7 +75,7 @@ export default function Dashboard() {
       }).catch(() => {});
     };
     fetchAll();
-    const iv = setInterval(fetchAll, 15000);
+    const iv = setInterval(fetchAll, 5000);
     return () => clearInterval(iv);
   }, [market]);
 

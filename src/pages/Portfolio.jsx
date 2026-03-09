@@ -64,7 +64,7 @@ export default function Portfolio() {
     if (holdings.length === 0) return;
     const iv = setInterval(() => {
       if (!refreshing) refreshPrices();
-    }, 30000);
+    }, 10000);
     return () => clearInterval(iv);
   }, [holdings, refreshing]);
 

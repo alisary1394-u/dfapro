@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 import { getIndices } from "@/components/api/marketDataClient";
 
@@ -13,12 +13,27 @@ export default function MarketOverviewBar({ compact = false }) {
   const [indices, setIndices] = useState(FALLBACK);
   const [live, setLive] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [flashes, setFlashes] = useState({});
+  const prevRef = useRef({});
 
   const fetchData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const data = await getIndices();
       if (data && data.length > 0) {
+        // Detect changes and trigger flashes
+        const newFlashes = {};
+        data.forEach(idx => {
+          const prev = prevRef.current[idx.name];
+          if (prev != null && idx.value !== prev) {
+            newFlashes[idx.name] = idx.value > prev ? "up" : "down";
+          }
+          prevRef.current[idx.name] = idx.value;
+        });
+        if (Object.keys(newFlashes).length > 0) {
+          setFlashes(newFlashes);
+          setTimeout(() => setFlashes({}), 800);
+        }
         setIndices(data);
         setLive(true);
       }
@@ -28,7 +43,7 @@ export default function MarketOverviewBar({ compact = false }) {
 
   useEffect(() => {
     fetchData();
-    const iv = setInterval(() => fetchData(true), 10000);
+    const iv = setInterval(() => fetchData(true), 5000);
     return () => clearInterval(iv);
   }, []);
 
@@ -54,10 +69,10 @@ export default function MarketOverviewBar({ compact = false }) {
         {indices.map((idx, i) => {
           const isUp = (idx.change_percent ?? 0) >= 0;
           return (
-            <div key={idx.name ?? i} className="flex items-center gap-2.5 shrink-0">
+            <div key={idx.name ?? i} className={`flex items-center gap-2.5 shrink-0 px-1.5 py-0.5 rounded-md transition-all ${flashes[idx.name] === "up" ? "price-flash-up" : flashes[idx.name] === "down" ? "price-flash-down" : ""}`}>
               <div>
                 <span className="text-[10px] text-[#475569] font-medium block leading-none mb-0.5">{idx.name}</span>
-                <span className={`${compact ? 'text-xs' : 'text-sm'} font-black text-white`}>
+                <span className={`${compact ? 'text-xs' : 'text-sm'} font-black text-white ${flashes[idx.name] === "up" ? "price-tick-up" : flashes[idx.name] === "down" ? "price-tick-down" : ""}`}>
                   {idx.value?.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>

@@ -122,6 +122,36 @@
 .ql-toolbar { border-color: #1a2540 !important; background: #0d1420; }
 .ql-container { border-color: #1a2540 !important; }
 
+/* ── Price Flash Animations ── */
+@keyframes flash-up {
+  0% { background-color: rgba(16, 185, 129, 0.35); }
+  100% { background-color: transparent; }
+}
+@keyframes flash-down {
+  0% { background-color: rgba(239, 68, 68, 0.35); }
+  100% { background-color: transparent; }
+}
+.price-flash-up {
+  animation: flash-up 0.8s ease-out;
+}
+.price-flash-down {
+  animation: flash-down 0.8s ease-out;
+}
+@keyframes price-tick-up {
+  0% { color: #10b981; transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+@keyframes price-tick-down {
+  0% { color: #ef4444; transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+.price-tick-up {
+  animation: price-tick-up 0.5s ease-out;
+}
+.price-tick-down {
+  animation: price-tick-down 0.5s ease-out;
+}
+
 /* ── Recharts custom ── */
 .recharts-cartesian-grid-horizontal line,
 .recharts-cartesian-grid-vertical line {
