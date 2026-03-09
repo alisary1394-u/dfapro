@@ -16,8 +16,8 @@
 
 1. استنساخ المشروع:
 ```bash
-git clone <repository-url>
-cd dainty-financial-advisor-pro
+git clone https://github.com/alisary1394-u/dfapro.git
+cd dfapro
 ```
 
 2. تثبيت الحزم:
