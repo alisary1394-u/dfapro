@@ -3,9 +3,12 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/dfapro/',
   server: {
     port: 5174,
+  },
+  preview: {
+    port: 8080,
+    host: '0.0.0.0'
   },
   plugins: [
     react(),
