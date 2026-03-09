@@ -8,7 +8,6 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
-  const [previewUrl, setPreviewUrl] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,7 +20,6 @@ export default function Register() {
     setLoading(true);
     setError('');
     setMessage('');
-    setPreviewUrl('');
 
     try {
       const response = await fetch('/api/auth/register', {
@@ -33,10 +31,7 @@ export default function Register() {
       if (!response.ok) {
         throw new Error(data.message || 'فشل إنشاء الحساب');
       }
-      setMessage('تم إنشاء الحساب. تحقق من بريدك الإلكتروني قبل تسجيل الدخول.');
-      if (data.previewUrl) {
-        setPreviewUrl(data.previewUrl);
-      }
+      setMessage('تم إنشاء الحساب بنجاح. يمكنك تسجيل الدخول مباشرة.');
     } catch (submitError) {
       setError(submitError.message || 'فشل إنشاء الحساب');
     } finally {
@@ -77,11 +72,6 @@ export default function Register() {
           />
           {error ? <div className="text-sm text-red-400">{error}</div> : null}
           {message ? <div className="text-sm text-emerald-400">{message}</div> : null}
-          {previewUrl ? (
-            <a href={previewUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-400 break-all">
-              {previewUrl}
-            </a>
-          ) : null}
           <button
             type="submit"
             disabled={loading}

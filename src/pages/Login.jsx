@@ -9,9 +9,6 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [unverifiedEmail, setUnverifiedEmail] = useState('');
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [resendMessage, setResendMessage] = useState('');
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -21,8 +18,6 @@ export default function Login() {
     event.preventDefault();
     setLoading(true);
     setError('');
-    setPreviewUrl('');
-    setResendMessage('');
 
     try {
       const response = await fetch('/api/auth/login', {
@@ -34,9 +29,6 @@ export default function Login() {
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if (data.code === 'EMAIL_NOT_VERIFIED') {
-          setUnverifiedEmail(email);
-        }
         throw new Error(data.message || 'فشل تسجيل الدخول');
       }
 
@@ -48,22 +40,6 @@ export default function Login() {
       setError(submitError.message || 'فشل تسجيل الدخول');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const resendVerification = async () => {
-    if (!unverifiedEmail) return;
-    setResendMessage('');
-    setPreviewUrl('');
-    const response = await fetch('/api/auth/resend-verification', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: unverifiedEmail })
-    });
-    const data = await response.json().catch(() => ({}));
-    setResendMessage('تم إرسال رسالة تحقق جديدة إذا كان البريد موجودًا');
-    if (data.previewUrl) {
-      setPreviewUrl(data.previewUrl);
     }
   };
 
@@ -90,12 +66,6 @@ export default function Login() {
             required
           />
           {error ? <div className="text-sm text-red-400">{error}</div> : null}
-          {resendMessage ? <div className="text-sm text-emerald-400">{resendMessage}</div> : null}
-          {previewUrl ? (
-            <a href={previewUrl} target="_blank" rel="noreferrer" className="text-sm text-blue-400 break-all">
-              {previewUrl}
-            </a>
-          ) : null}
           <button
             type="submit"
             disabled={loading}
@@ -104,11 +74,6 @@ export default function Login() {
             {loading ? 'جاري الدخول...' : 'دخول'}
           </button>
         </form>
-        {unverifiedEmail ? (
-          <button onClick={resendVerification} className="mt-4 text-sm text-blue-400">
-            إعادة إرسال رابط التحقق
-          </button>
-        ) : null}
         <div className="mt-6 text-sm text-slate-400">
           ليس لديك حساب؟{' '}
           <Link to="/register" className="text-[#d4a843]">إنشاء حساب</Link>

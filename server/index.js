@@ -20,6 +20,9 @@ const port = Number(process.env.PORT || 8080);
 const jwtSecret = process.env.JWT_SECRET || 'change-this-secret-in-production';
 const appUrl = process.env.APP_URL || `http://localhost:${port}`;
 const isProduction = process.env.NODE_ENV === 'production';
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const adminEmail = normalizeEmail(process.env.ADMIN_EMAIL || 'admin@dfapro.com');
+const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123456';
 
 await fs.mkdir(dataDir, { recursive: true });
 
@@ -42,6 +45,7 @@ const publicUser = (user) => ({
   id: user.id,
   name: user.name,
   email: user.email,
+  role: user.role || 'user',
   email_verified: Boolean(user.email_verified),
   dashboard_layout: user.dashboard_layout ?? null,
   dashboard_market: user.dashboard_market ?? 'saudi',
@@ -50,7 +54,34 @@ const publicUser = (user) => ({
   alpaca_base_url: user.alpaca_base_url ?? ''
 });
 
-const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const ensureAdminUser = async () => {
+  const existingAdmin = db.data.users.find((user) => user.email === adminEmail);
+  if (existingAdmin) {
+    existingAdmin.role = 'admin';
+    existingAdmin.email_verified = true;
+    await db.write();
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
+  db.data.users.push({
+    id: nanoid(),
+    name: 'Admin',
+    email: adminEmail,
+    passwordHash,
+    role: 'admin',
+    email_verified: true,
+    dashboard_layout: null,
+    dashboard_market: 'saudi',
+    created_at: new Date().toISOString(),
+    alpaca_api_key: '',
+    alpaca_secret_key: '',
+    alpaca_base_url: ''
+  });
+  await db.write();
+};
+
+await ensureAdminUser();
 
 const createSessionToken = (userId) => jwt.sign({ sub: userId }, jwtSecret, { expiresIn: '30d' });
 
@@ -164,7 +195,8 @@ app.post('/api/auth/register', async (req, res) => {
     name,
     email,
     passwordHash,
-    email_verified: false,
+    role: 'user',
+    email_verified: true,
     dashboard_layout: null,
     dashboard_market: 'saudi',
     created_at: new Date().toISOString(),
@@ -176,12 +208,11 @@ app.post('/api/auth/register', async (req, res) => {
   db.data.users.push(user);
   await db.write();
 
-  const token = await createVerificationRecord(user.id);
-  const delivery = await sendVerificationEmail(user, token);
+  const token = createSessionToken(user.id);
+  setSessionCookie(res, token);
 
   res.status(201).json({
-    message: 'Account created. Please verify your email.',
-    previewUrl: delivery.previewUrl,
+    message: 'Account created successfully.',
     user: publicUser(user)
   });
 });
@@ -200,10 +231,6 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(401).json({ message: 'Invalid email or password' });
   }
 
-  if (!user.email_verified) {
-    return res.status(403).json({ code: 'EMAIL_NOT_VERIFIED', message: 'Please verify your email before logging in' });
-  }
-
   const token = createSessionToken(user.id);
   setSessionCookie(res, token);
   res.json({ user: publicUser(user) });
@@ -215,49 +242,11 @@ app.post('/api/auth/logout', (_, res) => {
 });
 
 app.post('/api/auth/resend-verification', async (req, res) => {
-  const email = normalizeEmail(req.body?.email);
-  const user = db.data.users.find((item) => item.email === email);
-
-  if (!user) {
-    return res.json({ success: true });
-  }
-
-  if (user.email_verified) {
-    return res.json({ success: true, message: 'Email already verified' });
-  }
-
-  const token = await createVerificationRecord(user.id);
-  const delivery = await sendVerificationEmail(user, token);
-  res.json({ success: true, previewUrl: delivery.previewUrl });
+  res.json({ success: true, message: 'Email verification is currently disabled' });
 });
 
 app.post('/api/auth/verify-email', async (req, res) => {
-  const token = String(req.body?.token || '');
-  const record = db.data.verificationTokens.find((item) => item.token === token);
-
-  if (!record) {
-    return res.status(400).json({ message: 'Invalid verification token' });
-  }
-
-  if (record.expiresAt < Date.now()) {
-    db.data.verificationTokens = db.data.verificationTokens.filter((item) => item.token !== token);
-    await db.write();
-    return res.status(400).json({ message: 'Verification token has expired' });
-  }
-
-  const user = db.data.users.find((item) => item.id === record.userId);
-  if (!user) {
-    return res.status(404).json({ message: 'User not found' });
-  }
-
-  user.email_verified = true;
-  user.verified_at = new Date().toISOString();
-  db.data.verificationTokens = db.data.verificationTokens.filter((item) => item.userId !== user.id);
-  await db.write();
-
-  const sessionToken = createSessionToken(user.id);
-  setSessionCookie(res, sessionToken);
-  res.json({ success: true, user: publicUser(user) });
+  res.json({ success: true, message: 'Email verification is currently disabled' });
 });
 
 app.patch('/api/auth/me', authRequired, async (req, res) => {
