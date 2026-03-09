@@ -664,6 +664,127 @@ app.post('/api/ibkr/unsubscribe-all', (req, res) => {
   res.json({ ok: true });
 });
 
+// ═══════════════════════════════════════════════════════════════
+// ALPACA MARKETS - REST API
+// ═══════════════════════════════════════════════════════════════
+
+import * as alpacaApi from './alpacaApi.js';
+
+// Alpaca Connect
+app.post('/api/alpaca/connect', async (req, res) => {
+  try {
+    const { apiKey, secretKey, paper = true } = req.body || {};
+    if (!apiKey || !secretKey) {
+      return res.status(400).json({ error: 'API Key and Secret Key required' });
+    }
+    alpacaApi.connect(apiKey, secretKey, paper);
+    // Validate by fetching account
+    const account = await alpacaApi.getAccount();
+    res.json({ connected: true, account: { id: account.id, status: account.status, buying_power: account.buying_power, equity: account.equity } });
+  } catch (err) {
+    alpacaApi.disconnect();
+    res.status(401).json({ error: 'Invalid API keys or connection failed', details: err.message, connected: false });
+  }
+});
+
+// Alpaca Disconnect
+app.post('/api/alpaca/disconnect', (req, res) => {
+  alpacaApi.disconnect();
+  res.json({ connected: false });
+});
+
+// Alpaca Status
+app.get('/api/alpaca/status', (req, res) => {
+  res.json(alpacaApi.getStatus());
+});
+
+// Alpaca Account
+app.get('/api/alpaca/account', async (req, res) => {
+  try {
+    const data = await alpacaApi.getAccount();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to get account', details: err.message });
+  }
+});
+
+// Alpaca Positions
+app.get('/api/alpaca/positions', async (req, res) => {
+  try {
+    const data = await alpacaApi.getPositions();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to get positions', details: err.message });
+  }
+});
+
+// Alpaca Orders
+app.get('/api/alpaca/orders', async (req, res) => {
+  try {
+    const { status = 'open' } = req.query;
+    const data = await alpacaApi.getOrders(status);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to get orders', details: err.message });
+  }
+});
+
+// Alpaca Snapshot
+app.get('/api/alpaca/snapshot/:symbol', async (req, res) => {
+  try {
+    const data = await alpacaApi.getSnapshot(req.params.symbol);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Snapshot failed', details: err.message });
+  }
+});
+
+// Alpaca Historical Bars
+app.get('/api/alpaca/bars/:symbol', async (req, res) => {
+  try {
+    const { interval = 'daily' } = req.query;
+    const data = await alpacaApi.getBars(req.params.symbol, interval);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Historical data failed', details: err.message });
+  }
+});
+
+// Alpaca Asset Search
+app.get('/api/alpaca/search', async (req, res) => {
+  try {
+    const { q = '' } = req.query;
+    if (!q) return res.status(400).json({ error: 'Query required' });
+    const results = await alpacaApi.searchAssets(q);
+    res.json(results);
+  } catch (err) {
+    res.status(502).json({ error: 'Search failed', details: err.message });
+  }
+});
+
+// Alpaca SSE Streaming (polls snapshot every 3s)
+app.get('/api/alpaca/stream/:symbol', (req, res) => {
+  if (!alpacaApi.isConnected()) {
+    return res.status(502).json({ error: 'Not connected to Alpaca' });
+  }
+
+  const symbol = req.params.symbol;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  const sub = alpacaApi.subscribeQuotes(symbol, (tick) => {
+    res.write(`data: ${JSON.stringify(tick)}\n\n`);
+  });
+
+  req.on('close', () => {
+    sub.unsubscribe();
+  });
+});
+
 app.get('/api/health', (_, res) => {
   res.json({ ok: true });
 });

@@ -20,6 +20,21 @@ import {
   unsubscribeAll,
 } from "@/components/api/ibkrClient";
 import {
+  alpacaConfig,
+  connectAlpaca,
+  disconnectAlpaca,
+  getAlpacaStatus,
+  getAlpacaAccount,
+  getAlpacaPositions,
+  getAlpacaSnapshot,
+  getAlpacaBars,
+  searchAlpacaAsset,
+  subscribeAlpacaQuotes,
+  parseAlpacaQuote,
+  parseAlpacaBars,
+  parseAlpacaTick,
+} from "@/components/api/alpacaClient";
+import {
   Search, Brain, RefreshCw, Loader2, BarChart3,
   ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp, X,
   Maximize2, Minimize2, Layers, Settings, TrendingUp,
@@ -29,7 +44,7 @@ import {
   Magnet, Camera, RotateCcw, ChevronLeft, ChevronRight,
   Activity, LineChart, BarChart2,
   Star, Plus, Volume2, Clock, Calendar, Globe, Info,
-  Link2, Unlink2, Zap, CheckCircle2, AlertCircle, Wifi, WifiOff
+  Link2, Unlink2, Zap, CheckCircle2, AlertCircle, Wifi, WifiOff, Key
 } from "lucide-react";
 import {
   calcEMA, calcSMA, calcRSI, calcMACD, calcBollingerBands,
@@ -336,6 +351,198 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
             <li>اختر <span className="text-[#ff9800] font-bold">IB API</span> وسجّل الدخول</li>
             <li>المنفذ: 4001 (تداول حي) أو 4002 (تداول ورقي)</li>
             <li>ارجع هنا واضغط "اتصل بـ IB Gateway"</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ALPACA CONNECTION PANEL
+// ═══════════════════════════════════════════════════════════════
+function AlpacaConnectionPanel({ alpacaState, setAlpacaState, onClose }) {
+  const savedConfig = alpacaConfig.getConfig();
+  const [apiKey, setApiKey] = useState(savedConfig?.apiKey || '');
+  const [secretKey, setSecretKey] = useState(savedConfig?.secretKey || '');
+  const [paper, setPaper] = useState(savedConfig?.paper !== false);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState('');
+  const [account, setAccount] = useState(null);
+  const [positions, setPositions] = useState([]);
+
+  const doConnect = async () => {
+    setChecking(true);
+    setError('');
+    try {
+      const result = await connectAlpaca(apiKey, secretKey, paper);
+      if (result.connected) {
+        alpacaConfig.saveConfig({ apiKey, secretKey, paper, connected: true });
+        setAlpacaState(prev => ({ ...prev, connected: true, useAlpaca: true }));
+        try {
+          const acct = await getAlpacaAccount();
+          setAccount(acct);
+          setAlpacaState(prev => ({ ...prev, accountId: acct.id }));
+        } catch {}
+        try {
+          const pos = await getAlpacaPositions();
+          setPositions(Array.isArray(pos) ? pos : []);
+        } catch {}
+      }
+    } catch (err) {
+      setError('مفاتيح API غير صحيحة أو فشل الاتصال');
+    }
+    setChecking(false);
+  };
+
+  const doDisconnect = async () => {
+    try { await disconnectAlpaca(); } catch {}
+    alpacaConfig.clearConfig();
+    setAlpacaState({ connected: false, useAlpaca: false, accountId: null });
+    setAccount(null);
+    setPositions([]);
+  };
+
+  const toggleDataSource = () => {
+    setAlpacaState(prev => ({ ...prev, useAlpaca: !prev.useAlpaca }));
+  };
+
+  return (
+    <div className="absolute top-2 right-14 w-[320px] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden" dir="rtl">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[#2a2e39] bg-[#1e222d]">
+        <div className="flex items-center gap-1.5">
+          <Key className="w-4 h-4 text-[#ffeb3b]" />
+          <span className="text-xs font-bold text-[#ffeb3b]">Alpaca Markets</span>
+        </div>
+        <button onClick={onClose} className="p-1 hover:bg-[#2a2e39] rounded text-[#787b86] transition-colors"><X className="w-3.5 h-3.5" /></button>
+      </div>
+
+      <div className="p-3 space-y-3 max-h-[70vh] overflow-y-auto custom-scrollbar">
+        {/* Connection Status */}
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${alpacaState.connected ? 'bg-[#26a69a]/10 border-[#26a69a]/30' : 'bg-[#ef5350]/10 border-[#ef5350]/30'}`}>
+          {alpacaState.connected ? <Wifi className="w-4 h-4 text-[#26a69a]" /> : <WifiOff className="w-4 h-4 text-[#ef5350]" />}
+          <span className={`text-xs font-bold ${alpacaState.connected ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+            {alpacaState.connected ? (paper ? 'متصل (ورقي)' : 'متصل (حقيقي)') : 'غير متصل'}
+          </span>
+        </div>
+
+        {/* API Keys */}
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <label className="text-[10px] text-[#787b86] font-bold">API Key</label>
+            <input
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="PK..."
+              className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded px-3 py-1.5 text-[11px] text-[#d1d4dc] placeholder-[#434651] outline-none focus:border-[#ffeb3b]/50 transition-colors font-mono"
+              dir="ltr"
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] text-[#787b86] font-bold">Secret Key</label>
+            <input
+              type="password"
+              value={secretKey}
+              onChange={e => setSecretKey(e.target.value)}
+              placeholder="••••••••"
+              className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded px-3 py-1.5 text-[11px] text-[#d1d4dc] placeholder-[#434651] outline-none focus:border-[#ffeb3b]/50 transition-colors font-mono"
+              dir="ltr"
+              autoComplete="off"
+            />
+          </div>
+          <div className="flex items-center justify-between bg-[#0c0e14] rounded-lg p-2 cursor-pointer" onClick={() => setPaper(!paper)}>
+            <span className="text-[11px] text-[#d1d4dc]">تداول ورقي (Paper)</span>
+            <div className={`w-9 h-[20px] rounded-full transition-all relative ${paper ? 'bg-[#ffeb3b]' : 'bg-[#434651]'}`}>
+              <span className={`absolute top-[2px] w-[16px] h-[16px] bg-white rounded-full transition-all shadow-sm ${paper ? 'right-[2px]' : 'left-[2px]'}`} />
+            </div>
+          </div>
+        </div>
+
+        {/* Connect / Disconnect */}
+        {!alpacaState.connected ? (
+          <button onClick={doConnect} disabled={checking || !apiKey || !secretKey}
+            className="w-full py-2 text-[11px] font-bold text-[#131722] bg-[#ffeb3b] rounded-lg hover:bg-[#fdd835] disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+            {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+            {checking ? 'جاري الاتصال...' : 'اتصل بـ Alpaca'}
+          </button>
+        ) : (
+          <div className="space-y-2">
+            {/* Data source toggle */}
+            <div className="flex items-center justify-between bg-[#0c0e14] rounded-lg p-2.5 cursor-pointer" onClick={toggleDataSource}>
+              <span className="text-[11px] text-[#d1d4dc]">استخدام بيانات Alpaca</span>
+              <div className={`w-9 h-[20px] rounded-full transition-all relative ${alpacaState.useAlpaca ? 'bg-[#ffeb3b]' : 'bg-[#434651]'}`}>
+                <span className={`absolute top-[2px] w-[16px] h-[16px] bg-white rounded-full transition-all shadow-sm ${alpacaState.useAlpaca ? 'right-[2px]' : 'left-[2px]'}`} />
+              </div>
+            </div>
+
+            {/* Account info */}
+            {account && (
+              <div className="space-y-0">
+                <div className="text-[10px] font-bold text-[#787b86] mb-1">معلومات الحساب</div>
+                <div className="flex justify-between py-1 border-b border-[#2a2e39]/50">
+                  <span className="text-[10px] text-[#787b86]">رقم الحساب</span>
+                  <span className="text-[10px] font-bold text-[#d1d4dc] font-mono">{account.account_number}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-[#2a2e39]/50">
+                  <span className="text-[10px] text-[#787b86]">القوة الشرائية</span>
+                  <span className="text-[10px] font-bold text-[#26a69a]">$ {Number(account.buying_power).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-[#2a2e39]/50">
+                  <span className="text-[10px] text-[#787b86]">القيمة الإجمالية</span>
+                  <span className="text-[10px] font-bold text-[#d1d4dc]">$ {Number(account.equity).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-[#2a2e39]/50">
+                  <span className="text-[10px] text-[#787b86]">النقد المتاح</span>
+                  <span className="text-[10px] font-bold text-[#d1d4dc]">$ {Number(account.cash).toLocaleString()}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Positions */}
+            {positions.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[10px] font-bold text-[#787b86]">المراكز المفتوحة ({positions.length})</div>
+                <div className="max-h-[120px] overflow-y-auto custom-scrollbar space-y-0.5">
+                  {positions.map((pos, i) => (
+                    <div key={i} className="flex items-center justify-between px-2 py-1 rounded bg-[#0c0e14] text-[10px]">
+                      <div>
+                        <span className="font-bold text-[#d1d4dc]">{pos.symbol}</span>
+                        <span className="text-[#787b86] mr-1">×{pos.qty}</span>
+                      </div>
+                      <div className="text-left">
+                        <span className={`font-mono ${Number(pos.unrealized_pl) >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+                          {Number(pos.unrealized_pl) >= 0 ? '+' : ''}{Number(pos.unrealized_pl).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button onClick={doDisconnect}
+              className="w-full py-2 text-[11px] font-bold text-[#ef5350] border border-[#ef5350]/30 rounded-lg hover:bg-[#ef5350]/10 transition-all flex items-center justify-center gap-2">
+              <Unlink2 className="w-3.5 h-3.5" /> قطع الاتصال
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 p-2 rounded-lg bg-[#ef5350]/10 border border-[#ef5350]/20">
+            <AlertCircle className="w-3.5 h-3.5 text-[#ef5350] shrink-0 mt-0.5" />
+            <p className="text-[10px] text-[#ef5350] leading-relaxed">{error}</p>
+          </div>
+        )}
+
+        {/* Instructions */}
+        <div className="bg-[#0c0e14] rounded-lg p-2.5 space-y-1.5 border border-[#2a2e39]/50">
+          <p className="text-[10px] font-bold text-[#787b86]">خطوات الإعداد:</p>
+          <ol className="text-[9px] text-[#787b86] space-y-1 list-decimal pr-4 leading-relaxed">
+            <li>سجّل في <span className="text-[#ffeb3b] font-bold">alpaca.markets</span></li>
+            <li>اذهب إلى <span className="text-[#ffeb3b] font-bold">API Keys</span> في لوحة التحكم</li>
+            <li>أنشئ مفتاح API جديد</li>
+            <li>انسخ API Key و Secret Key هنا</li>
           </ol>
         </div>
       </div>
@@ -845,6 +1052,12 @@ export default function ChartBoard() {
     selectedAccount: null,
     conidCache: {}, // symbol -> { conid, exchange, currency, secType }
   });
+  const [showAlpaca, setShowAlpaca] = useState(false);
+  const [alpacaState, setAlpacaState] = useState({
+    connected: false,
+    useAlpaca: false,
+    accountId: null,
+  });
 
   // Overlays
   const [overlays, setOverlays] = useState({
@@ -900,6 +1113,17 @@ export default function ChartBoard() {
         })
         .catch(() => {});
     }
+    // Init Alpaca from saved config
+    const alpacaSaved = alpacaConfig.getConfig();
+    if (alpacaSaved?.connected) {
+      getAlpacaStatus()
+        .then(status => {
+          if (status.connected) {
+            setAlpacaState(prev => ({ ...prev, connected: true, useAlpaca: true }));
+          }
+        })
+        .catch(() => {});
+    }
   }, []);
 
   // ── IBKR connection health check ──
@@ -936,7 +1160,7 @@ export default function ChartBoard() {
     }
   }, [ibkrState.conidCache]);
 
-  // ── Fetch Quote (IBKR or Yahoo) ──
+  // ── Fetch Quote (IBKR / Alpaca / Yahoo) ──
   useEffect(() => {
     if (!selectedStock) return;
     setQuote(null);
@@ -983,6 +1207,31 @@ export default function ChartBoard() {
         cancelled = true;
         if (sseSub) sseSub.close();
       };
+    } else if (alpacaState.connected && alpacaState.useAlpaca) {
+      // Alpaca real-time quote via SSE polling
+      let sseSub = null;
+
+      const setupAlpaca = async () => {
+        // Initial snapshot
+        try {
+          const snap = await getAlpacaSnapshot(selectedStock.symbol);
+          if (snap) setQuote(parseAlpacaQuote(snap));
+        } catch (err) {
+          console.error('[Alpaca] Snapshot error:', err);
+        }
+
+        // SSE streaming
+        sseSub = subscribeAlpacaQuotes(selectedStock.symbol, (tick) => {
+          const q = parseAlpacaTick(tick);
+          if (q) setQuote(q);
+        });
+      };
+
+      setupAlpaca();
+
+      return () => {
+        if (sseSub) sseSub.close();
+      };
     } else {
       // Standard Yahoo quote
       const fetchQ = () => getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
@@ -990,15 +1239,16 @@ export default function ChartBoard() {
       const iv = setInterval(fetchQ, 5000);
       return () => clearInterval(iv);
     }
-  }, [selectedStock, market, ibkrState.connected, ibkrState.useIbkr]);
+  }, [selectedStock, market, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
 
-  // ── Fetch Candles (IBKR or Yahoo) ──
+  // ── Fetch Candles (IBKR / Alpaca / Yahoo) ──
   useEffect(() => {
     if (!selectedStock) return;
     fetchCandles();
-    const iv = setInterval(fetchCandles, ibkrState.useIbkr ? 15000 : 10000);
+    const useRealtime = ibkrState.useIbkr || alpacaState.useAlpaca;
+    const iv = setInterval(fetchCandles, useRealtime ? 15000 : 10000);
     return () => clearInterval(iv);
-  }, [selectedStock, market, timeframe, ibkrState.connected, ibkrState.useIbkr]);
+  }, [selectedStock, market, timeframe, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
 
   const fetchCandles = async () => {
     setLoading(true);
@@ -1032,6 +1282,39 @@ export default function ChartBoard() {
         }
       } catch (err) {
         console.error('[IBKR] History error:', err);
+      }
+      setLoading(false);
+      return;
+    }
+
+    // ── Alpaca candles ──
+    if (alpacaState.connected && alpacaState.useAlpaca) {
+      try {
+        const bars = await getAlpacaBars(selectedStock.symbol, selectedTf.interval);
+        const alpacaCandles = parseAlpacaBars(bars);
+
+        if (alpacaCandles.length > 0) {
+          const isIntraday = ["1min", "5min", "15min", "30min", "60min"].includes(selectedTf.interval);
+          const normalized = alpacaCandles.map(c => {
+            let t = c.time;
+            if (isIntraday) {
+              t = typeof t === 'string' ? Math.floor(new Date(t).getTime() / 1000) : t;
+            } else {
+              t = typeof t === 'string' ? t.substring(0, 10) : new Date(t * 1000).toISOString().substring(0, 10);
+            }
+            return { time: t, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 };
+          });
+          const seen = new Set();
+          const processed = normalized
+            .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
+            .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
+          if (processed.length > 0) {
+            setCandles(processed);
+            setCurrentBar(processed[processed.length - 1]);
+          }
+        }
+      } catch (err) {
+        console.error('[Alpaca] History error:', err);
       }
       setLoading(false);
       return;
@@ -1449,7 +1732,7 @@ export default function ChartBoard() {
           </button>
 
           {/* IBKR Connection */}
-          <button onClick={() => setShowIbkr(!showIbkr)}
+          <button onClick={() => { setShowIbkr(!showIbkr); setShowAlpaca(false); }}
             className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all ${
               ibkrState.connected
                 ? (showIbkr ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
@@ -1458,6 +1741,18 @@ export default function ChartBoard() {
             {ibkrState.connected ? <Wifi className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">IBKR</span>
             {ibkrState.useIbkr && <span className="w-1.5 h-1.5 rounded-full bg-[#26a69a] animate-pulse" />}
+          </button>
+
+          {/* Alpaca Connection */}
+          <button onClick={() => { setShowAlpaca(!showAlpaca); setShowIbkr(false); }}
+            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+              alpacaState.connected
+                ? (showAlpaca ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
+                : (showAlpaca ? "bg-[#ffeb3b]/20 text-[#ffeb3b]" : "text-[#787b86] hover:text-[#ffeb3b]")
+            }`}>
+            {alpacaState.connected ? <Wifi className="w-3.5 h-3.5" /> : <Key className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">Alpaca</span>
+            {alpacaState.useAlpaca && <span className="w-1.5 h-1.5 rounded-full bg-[#ffeb3b] animate-pulse" />}
           </button>
 
           {/* Fullscreen */}
@@ -1502,6 +1797,10 @@ export default function ChartBoard() {
 
           {showIbkr && (
             <IbkrConnectionPanel ibkrState={ibkrState} setIbkrState={setIbkrState} onClose={() => setShowIbkr(false)} />
+          )}
+
+          {showAlpaca && (
+            <AlpacaConnectionPanel alpacaState={alpacaState} setAlpacaState={setAlpacaState} onClose={() => setShowAlpaca(false)} />
           )}
 
           {/* OHLCV */}
