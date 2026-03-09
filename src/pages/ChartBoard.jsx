@@ -2,21 +2,21 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { createChart, CrosshairMode, LineStyle } from "lightweight-charts";
 import { base44 } from "@/api/base44Client";
 import { getQuote } from "@/components/api/marketDataClient";
-import ibkrClient, {
+import {
   ibkrConfig,
-  checkAuthStatus,
-  reauthenticate,
-  tickle,
+  connectToGateway,
+  disconnectFromGateway,
+  getConnectionStatus,
   getAccounts,
   getAccountSummary,
   getPositions,
   searchContract,
   getMarketSnapshot,
   getHistoricalData,
-  createMarketDataStream,
+  subscribeMarketData,
   parseSnapshotToQuote,
   parseHistoryToCandles,
-  parseStreamUpdate,
+  parseTickUpdate,
   unsubscribeAll,
 } from "@/components/api/ibkrClient";
 import {
@@ -109,6 +109,7 @@ const DRAWING_TOOLS = [
 
 const chartOpts = (container) => ({
   layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 11 },
+  watermark: { visible: false },
   grid: { vertLines: { color: "#1e222d40" }, horzLines: { color: "#1e222d40" } },
   width: container.clientWidth,
   crosshair: {
@@ -144,9 +145,9 @@ const formatVol = (v) => {
 // IBKR CONNECTION PANEL
 // ═══════════════════════════════════════════════════════════════
 function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
-  const [gatewayUrl, setGatewayUrl] = useState(
-    ibkrConfig.getConfig()?.gatewayUrl || 'https://localhost:5000'
-  );
+  const savedConfig = ibkrConfig.getConfig();
+  const [host, setHost] = useState(savedConfig?.host || '127.0.0.1');
+  const [port, setPort] = useState(savedConfig?.port || 4001);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
   const [accounts, setAccounts] = useState([]);
@@ -157,51 +158,48 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
     setChecking(true);
     setError('');
     try {
-      const status = await checkAuthStatus();
-      if (status.authenticated || status.connected) {
-        ibkrConfig.saveConfig({ gatewayUrl, connected: true });
+      const result = await connectToGateway(host, Number(port), 0);
+      if (result.connected) {
+        ibkrConfig.saveConfig({ host, port: Number(port), connected: true });
         setIbkrState(prev => ({ ...prev, connected: true, authenticated: true }));
-        // fetch accounts
+        // Wait a moment for managedAccounts event
+        await new Promise(r => setTimeout(r, 1500));
         try {
           const accts = await getAccounts();
           const acctList = Array.isArray(accts) ? accts : [];
           setAccounts(acctList);
           setIbkrState(prev => ({ ...prev, accounts: acctList }));
           if (acctList.length > 0) {
-            const selectedAcct = acctList[0]?.accountId || acctList[0]?.id;
+            const selectedAcct = acctList[0]?.id;
             setIbkrState(prev => ({ ...prev, selectedAccount: selectedAcct }));
             try {
               const summary = await getAccountSummary(selectedAcct);
               setAccountSummary(summary);
             } catch {}
             try {
-              const pos = await getPositions(selectedAcct);
+              const pos = await getPositions();
               setPositions(Array.isArray(pos) ? pos : []);
             } catch {}
           }
         } catch {}
-      } else {
-        setError('بوابة IBKR تعمل لكن لم يتم تسجيل الدخول. يرجى فتح بوابة العميل وتسجيل الدخول أولاً.');
       }
     } catch (err) {
-      setError('تعذر الاتصال ببوابة IBKR. تأكد من تشغيل IB Gateway على العنوان المحدد.');
+      setError('تعذر الاتصال بـ IB Gateway. تأكد من تشغيله على المنفذ ' + port);
     }
     setChecking(false);
   };
 
-  const doDisconnect = () => {
+  const doDisconnect = async () => {
+    try { await disconnectFromGateway(); } catch {}
     ibkrConfig.clearConfig();
-    setIbkrState({ connected: false, authenticated: false, accounts: [], selectedAccount: null, useIbkr: false });
+    setIbkrState({ connected: false, authenticated: false, accounts: [], selectedAccount: null, useIbkr: false, conidCache: {} });
     setAccounts([]);
     setAccountSummary(null);
     setPositions([]);
   };
 
   const toggleDataSource = () => {
-    setIbkrState(prev => ({
-      ...prev,
-      useIbkr: !prev.useIbkr
-    }));
+    setIbkrState(prev => ({ ...prev, useIbkr: !prev.useIbkr }));
   };
 
   return (
@@ -219,20 +217,37 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
         <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${ibkrState.connected ? 'bg-[#26a69a]/10 border-[#26a69a]/30' : 'bg-[#ef5350]/10 border-[#ef5350]/30'}`}>
           {ibkrState.connected ? <Wifi className="w-4 h-4 text-[#26a69a]" /> : <WifiOff className="w-4 h-4 text-[#ef5350]" />}
           <span className={`text-xs font-bold ${ibkrState.connected ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
-            {ibkrState.connected ? 'متصل ببوابة IBKR' : 'غير متصل'}
+            {ibkrState.connected ? 'متصل بـ IB Gateway' : 'غير متصل'}
           </span>
         </div>
 
-        {/* Gateway URL */}
-        <div className="space-y-1">
-          <label className="text-[10px] text-[#787b86] font-bold">عنوان بوابة IB Gateway</label>
-          <input
-            value={gatewayUrl}
-            onChange={e => setGatewayUrl(e.target.value)}
-            placeholder="https://localhost:5000"
-            className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded px-3 py-1.5 text-[11px] text-[#d1d4dc] placeholder-[#434651] outline-none focus:border-[#ff9800]/50 transition-colors font-mono"
-            dir="ltr"
-          />
+        {/* Connection Settings */}
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <div className="flex-1 space-y-1">
+              <label className="text-[10px] text-[#787b86] font-bold">عنوان IP</label>
+              <input
+                value={host}
+                onChange={e => setHost(e.target.value)}
+                placeholder="127.0.0.1"
+                className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded px-3 py-1.5 text-[11px] text-[#d1d4dc] placeholder-[#434651] outline-none focus:border-[#ff9800]/50 transition-colors font-mono"
+                dir="ltr"
+              />
+            </div>
+            <div className="w-[90px] space-y-1">
+              <label className="text-[10px] text-[#787b86] font-bold">المنفذ</label>
+              <select
+                value={port}
+                onChange={e => setPort(Number(e.target.value))}
+                className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded px-2 py-1.5 text-[11px] text-[#d1d4dc] outline-none focus:border-[#ff9800]/50 transition-colors font-mono"
+              >
+                <option value={4001}>4001 حي</option>
+                <option value={4002}>4002 ورقي</option>
+                <option value={7496}>7496 TWS حي</option>
+                <option value={7497}>7497 TWS ورقي</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* Connect / Disconnect buttons */}
@@ -240,7 +255,7 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
           <button onClick={doConnect} disabled={checking}
             className="w-full py-2 text-[11px] font-bold text-white bg-[#ff9800] rounded-lg hover:bg-[#f57c00] disabled:opacity-50 transition-all flex items-center justify-center gap-2">
             {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-            {checking ? 'جاري الاتصال...' : 'اتصل بالبوابة'}
+            {checking ? 'جاري الاتصال...' : 'اتصل بـ IB Gateway'}
           </button>
         ) : (
           <div className="space-y-2">
@@ -258,14 +273,11 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
                 <div className="text-[10px] font-bold text-[#787b86]">الحسابات</div>
                 {accounts.map((acct, i) => (
                   <div key={i} className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all ${
-                    ibkrState.selectedAccount === (acct.accountId || acct.id)
+                    ibkrState.selectedAccount === acct.id
                       ? 'bg-[#ff9800]/10 border-[#ff9800]/30'
                       : 'bg-[#0c0e14] border-[#2a2e39] hover:border-[#434651]'
-                  }`} onClick={() => setIbkrState(prev => ({ ...prev, selectedAccount: acct.accountId || acct.id }))}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-[#787b86]">{acct.type || 'حساب'}</span>
-                      <span className="text-[11px] font-bold text-[#d1d4dc] font-mono">{acct.accountId || acct.id}</span>
-                    </div>
+                  }`} onClick={() => setIbkrState(prev => ({ ...prev, selectedAccount: acct.id }))}>
+                    <span className="text-[11px] font-bold text-[#d1d4dc] font-mono">{acct.id}</span>
                   </div>
                 ))}
               </div>
@@ -275,14 +287,10 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
             {accountSummary && (
               <div className="space-y-0">
                 <div className="text-[10px] font-bold text-[#787b86] mb-1">ملخص الحساب</div>
-                {[
-                  { label: 'صافي القيمة', value: accountSummary.netliquidation?.amount || accountSummary.totalcashvalue?.amount },
-                  { label: 'القوة الشرائية', value: accountSummary.buyingpower?.amount },
-                  { label: 'P&L اليوم', value: accountSummary.dailypnl?.amount },
-                ].filter(r => r.value != null).map((r, i) => (
+                {Object.entries(accountSummary).map(([tag, info], i) => (
                   <div key={i} className="flex justify-between py-1 border-b border-[#2a2e39]/50">
-                    <span className="text-[10px] text-[#787b86]">{r.label}</span>
-                    <span className="text-[10px] font-bold text-[#d1d4dc]">${typeof r.value === 'number' ? r.value.toLocaleString() : r.value}</span>
+                    <span className="text-[10px] text-[#787b86]">{tag}</span>
+                    <span className="text-[10px] font-bold text-[#d1d4dc]">{info.currency} {Number(info.value).toLocaleString()}</span>
                   </div>
                 ))}
               </div>
@@ -296,12 +304,10 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
                   {positions.map((pos, i) => (
                     <div key={i} className="flex items-center justify-between px-2 py-1 rounded bg-[#0c0e14] text-[10px]">
                       <div>
-                        <span className="font-bold text-[#d1d4dc]">{pos.contractDesc || pos.ticker}</span>
+                        <span className="font-bold text-[#d1d4dc]">{pos.contract?.symbol || '?'}</span>
                         <span className="text-[#787b86] mr-1">×{pos.position}</span>
                       </div>
-                      <span className={`font-bold ${(pos.unrealizedPnl || 0) >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
-                        {(pos.unrealizedPnl || 0) >= 0 ? '+' : ''}{(pos.unrealizedPnl || 0).toFixed(2)}
-                      </span>
+                      <span className="text-[#787b86] font-mono">{pos.avgCost?.toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -326,10 +332,10 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
         <div className="bg-[#0c0e14] rounded-lg p-2.5 space-y-1.5 border border-[#2a2e39]/50">
           <p className="text-[10px] font-bold text-[#787b86]">خطوات الإعداد:</p>
           <ol className="text-[9px] text-[#787b86] space-y-1 list-decimal pr-4 leading-relaxed">
-            <li>قم بتحميل <span className="text-[#ff9800] font-bold">IB Gateway</span> أو <span className="text-[#ff9800] font-bold">Client Portal Gateway</span></li>
-            <li>شغّل البوابة (المنفذ الافتراضي: 5000)</li>
-            <li>سجّل الدخول عبر واجهة البوابة في المتصفح</li>
-            <li>ارجع هنا واضغط "اتصل بالبوابة"</li>
+            <li>قم بتشغيل <span className="text-[#ff9800] font-bold">IB Gateway</span></li>
+            <li>اختر <span className="text-[#ff9800] font-bold">IB API</span> وسجّل الدخول</li>
+            <li>المنفذ: 4001 (تداول حي) أو 4002 (تداول ورقي)</li>
+            <li>ارجع هنا واضغط "اتصل بـ IB Gateway"</li>
           </ol>
         </div>
       </div>
@@ -837,9 +843,8 @@ export default function ChartBoard() {
     useIbkr: false,
     accounts: [],
     selectedAccount: null,
-    conidCache: {}, // symbol -> conid mapping
+    conidCache: {}, // symbol -> { conid, exchange, currency, secType }
   });
-  const ibkrStreamRef = useRef(null);
 
   // Overlays
   const [overlays, setOverlays] = useState({
@@ -877,9 +882,9 @@ export default function ChartBoard() {
   useEffect(() => {
     const saved = ibkrConfig.getConfig();
     if (saved?.connected) {
-      checkAuthStatus()
+      getConnectionStatus()
         .then(status => {
-          if (status.authenticated || status.connected) {
+          if (status.connected) {
             setIbkrState(prev => ({ ...prev, connected: true, authenticated: true, useIbkr: true }));
             getAccounts().then(accts => {
               const list = Array.isArray(accts) ? accts : [];
@@ -887,7 +892,7 @@ export default function ChartBoard() {
                 setIbkrState(prev => ({
                   ...prev,
                   accounts: list,
-                  selectedAccount: list[0]?.accountId || list[0]?.id,
+                  selectedAccount: list[0]?.id,
                 }));
               }
             }).catch(() => {});
@@ -897,14 +902,14 @@ export default function ChartBoard() {
     }
   }, []);
 
-  // ── IBKR session keep-alive ──
+  // ── IBKR connection health check ──
   useEffect(() => {
     if (!ibkrState.connected) return;
     const iv = setInterval(() => {
-      tickle().catch(() => {
+      getConnectionStatus().catch(() => {
         setIbkrState(prev => ({ ...prev, connected: false, authenticated: false }));
       });
-    }, 55000); // tickle every 55s to keep session alive
+    }, 30000);
     return () => clearInterval(iv);
   }, [ibkrState.connected]);
 
@@ -915,16 +920,16 @@ export default function ChartBoard() {
       const results = await searchContract(symbol);
       const contracts = Array.isArray(results) ? results : [];
       if (contracts.length === 0) return null;
-      // Pick STK (stock) contract, prefer US exchanges
-      const stk = contracts.find(c => c.sections?.some(s => s.secType === 'STK')) || contracts[0];
-      const conid = stk.conid || stk.sections?.[0]?.conid;
+      // Pick STK (stock) contract
+      const stk = contracts.find(c => c.secType === 'STK') || contracts[0];
+      const conid = stk.conid;
       if (conid) {
         setIbkrState(prev => ({
           ...prev,
-          conidCache: { ...prev.conidCache, [symbol]: conid },
+          conidCache: { ...prev.conidCache, [symbol]: { conid, exchange: stk.exchange, currency: stk.currency, secType: stk.secType } },
         }));
       }
-      return conid;
+      return { conid, exchange: stk.exchange, currency: stk.currency, secType: stk.secType };
     } catch (err) {
       console.error('[IBKR] Contract search error:', err);
       return null;
@@ -937,22 +942,47 @@ export default function ChartBoard() {
     setQuote(null);
 
     if (ibkrState.connected && ibkrState.useIbkr) {
-      // IBKR real-time quote
+      // IBKR real-time quote via snapshot + SSE streaming
       let cancelled = false;
-      const fetchIbkrQuote = async () => {
-        const conid = await resolveConid(selectedStock.symbol);
-        if (!conid || cancelled) return;
+      let sseSub = null;
+
+      const setupIbkr = async () => {
+        const info = await resolveConid(selectedStock.symbol);
+        if (!info?.conid || cancelled) return;
+
+        // Initial snapshot
         try {
-          const snapshots = await getMarketSnapshot(conid);
-          const snap = Array.isArray(snapshots) ? snapshots[0] : snapshots;
+          const snap = await getMarketSnapshot(info.conid, info.exchange, info.currency, info.secType);
           if (!cancelled && snap) setQuote(parseSnapshotToQuote(snap));
         } catch (err) {
           console.error('[IBKR] Snapshot error:', err);
         }
+
+        // SSE streaming for real-time updates
+        sseSub = subscribeMarketData(info.conid, (tick) => {
+          const update = parseTickUpdate(tick);
+          if (!update) return;
+          setQuote(prev => {
+            if (!prev) return prev;
+            const updated = { ...prev };
+            if (update.field === 'last') {
+              updated.price = update.value;
+              updated.change = +(update.value - (prev.prevClose || 0)).toFixed(4);
+              updated.change_percent = prev.prevClose ? +(((update.value - prev.prevClose) / prev.prevClose) * 100).toFixed(2) : 0;
+            } else {
+              updated[update.field] = update.value;
+            }
+            return updated;
+          });
+        }, { exchange: info.exchange, currency: info.currency, secType: info.secType });
       };
-      fetchIbkrQuote();
-      const iv = setInterval(fetchIbkrQuote, 3000); // faster polling for IBKR
-      return () => { cancelled = true; clearInterval(iv); };
+
+      setupIbkr();
+
+      return () => {
+        cancelled = true;
+        if (sseSub) sseSub.close();
+      };
     } else {
       // Standard Yahoo quote
       const fetchQ = () => getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
@@ -961,50 +991,6 @@ export default function ChartBoard() {
       return () => clearInterval(iv);
     }
   }, [selectedStock, market, ibkrState.connected, ibkrState.useIbkr]);
-
-  // ── IBKR WebSocket streaming ──
-  useEffect(() => {
-    if (!ibkrState.connected || !ibkrState.useIbkr || !selectedStock) return;
-
-    let conid = null;
-    let stream = null;
-
-    const setupStream = async () => {
-      conid = await resolveConid(selectedStock.symbol);
-      if (!conid) return;
-
-      stream = createMarketDataStream(
-        (data) => {
-          if (data.conid === conid || data.conidEx === String(conid)) {
-            const update = parseStreamUpdate(data);
-            if (update && update.price) {
-              setQuote(prev => prev ? { ...prev, ...Object.fromEntries(
-                Object.entries(update).filter(([, v]) => v != null)
-              )} : update);
-            }
-          }
-        },
-        (err) => console.error('[IBKR WS] Stream error:', err)
-      );
-
-      // Subscribe once connected
-      stream.ws.addEventListener('open', () => {
-        stream.subscribe(conid);
-      });
-
-      ibkrStreamRef.current = stream;
-    };
-
-    setupStream();
-
-    return () => {
-      if (stream) {
-        if (conid) stream.unsubscribe(conid);
-        stream.close();
-      }
-      ibkrStreamRef.current = null;
-    };
-  }, [selectedStock, ibkrState.connected, ibkrState.useIbkr]);
 
   // ── Fetch Candles (IBKR or Yahoo) ──
   useEffect(() => {
@@ -1020,9 +1006,9 @@ export default function ChartBoard() {
     // ── IBKR candles ──
     if (ibkrState.connected && ibkrState.useIbkr) {
       try {
-        const conid = await resolveConid(selectedStock.symbol);
-        if (!conid) { setLoading(false); return; }
-        const historyResponse = await getHistoricalData(conid, selectedTf.interval);
+        const info = await resolveConid(selectedStock.symbol);
+        if (!info?.conid) { setLoading(false); return; }
+        const historyResponse = await getHistoricalData(info.conid, selectedTf.interval, info.exchange, info.currency, info.secType);
         const ibkrCandles = parseHistoryToCandles(historyResponse);
 
         if (ibkrCandles.length > 0) {
@@ -1239,6 +1225,7 @@ export default function ChartBoard() {
       const container = rsiContainerRef.current;
       const chart = createChart(container, {
         layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10 },
+        watermark: { visible: false },
         grid: { vertLines: { color: "#1e222d30" }, horzLines: { color: "#1e222d30" } },
         width: container.clientWidth, height: 100,
         timeScale: { visible: false, borderColor: C.border },
@@ -1263,6 +1250,7 @@ export default function ChartBoard() {
       const container = macdContainerRef.current;
       const chart = createChart(container, {
         layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10 },
+        watermark: { visible: false },
         grid: { vertLines: { color: "#1e222d30" }, horzLines: { color: "#1e222d30" } },
         width: container.clientWidth, height: 110,
         timeScale: { visible: false, borderColor: C.border },
@@ -1289,6 +1277,7 @@ export default function ChartBoard() {
       const container = stochContainerRef.current;
       const chart = createChart(container, {
         layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10 },
+        watermark: { visible: false },
         grid: { vertLines: { color: "#1e222d30" }, horzLines: { color: "#1e222d30" } },
         width: container.clientWidth, height: 100,
         timeScale: { visible: false, borderColor: C.border },

@@ -10,7 +10,6 @@ import nodemailer from 'nodemailer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
-import { WebSocketServer, WebSocket } from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -520,215 +519,149 @@ const sendVerificationEmail = async (user, token) => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// INTERACTIVE BROKERS - CLIENT PORTAL GATEWAY PROXY
+// INTERACTIVE BROKERS - TWS API (via @stoqey/ib)
 // ═══════════════════════════════════════════════════════════════
-// The IB Client Portal Gateway runs locally (default: https://localhost:5000).
-// All /api/ibkr/* routes are proxied to the gateway.
-// The gateway uses self-signed SSL certs, so we disable TLS verification for proxy calls.
+// Connects to IB Gateway via TWS protocol on port 4001 (live) or 4002 (paper).
 
-const IBKR_GATEWAY_DEFAULT = 'https://localhost:5000';
+import * as ibkrTws from './ibkrTws.js';
 
-const getIbkrGateway = (req) => {
-  // Allow override via header or env variable
-  return req.headers['x-ibkr-gateway'] || process.env.IBKR_GATEWAY_URL || IBKR_GATEWAY_DEFAULT;
-};
+// Streaming subscriptions for SSE clients
+const sseClients = new Set();
 
-const ibkrProxy = async (gatewayUrl, apiPath, options = {}) => {
-  const url = `${gatewayUrl}/v1/api${apiPath}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': 'DFAPro/1.0',
-      ...(options.headers || {}),
-    },
-    // IBKR gateway uses self-signed certs
-    ...(globalThis.process && { 
-      signal: AbortSignal.timeout(options.timeout || 15000),
-    }),
-  });
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  return { status: res.status, data, ok: res.ok };
-};
-
-// IBKR Auth Status
-app.get('/api/ibkr/auth/status', async (req, res) => {
+// IBKR Connect
+app.post('/api/ibkr/connect', async (req, res) => {
   try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, '/iserver/auth/status');
-    res.status(result.status).json(result.data);
+    const { host = '127.0.0.1', port = 4001, clientId = 0 } = req.body || {};
+    // Validate port to expected range
+    if (![4001, 4002, 7496, 7497].includes(Number(port))) {
+      return res.status(400).json({ error: 'Invalid port. Use 4001 (live) or 4002 (paper)' });
+    }
+    const result = await ibkrTws.connect(host, Number(port), Number(clientId));
+    res.json(result);
   } catch (err) {
-    console.error('IBKR auth status error:', err.message);
-    res.status(502).json({ error: 'Cannot reach IBKR Gateway', details: err.message, connected: false });
+    console.error('IBKR connect error:', err.message);
+    res.status(502).json({ error: 'Cannot connect to IB Gateway', details: err.message, connected: false });
   }
 });
 
-// IBKR Re-authenticate
-app.post('/api/ibkr/auth/reauthenticate', async (req, res) => {
-  try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, '/iserver/reauthenticate', { method: 'POST' });
-    res.status(result.status).json(result.data);
-  } catch (err) {
-    res.status(502).json({ error: 'IBKR reauthenticate failed', details: err.message });
-  }
+// IBKR Disconnect
+app.post('/api/ibkr/disconnect', (req, res) => {
+  const result = ibkrTws.disconnect();
+  res.json(result);
 });
 
-// IBKR Tickle (keep session alive)
-app.post('/api/ibkr/tickle', async (req, res) => {
-  try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, '/tickle', { method: 'POST' });
-    res.status(result.status).json(result.data);
-  } catch (err) {
-    res.status(502).json({ error: 'IBKR tickle failed' });
-  }
+// IBKR Connection Status
+app.get('/api/ibkr/status', (req, res) => {
+  res.json(ibkrTws.getStatus());
 });
 
-// IBKR Portfolio Accounts
-app.get('/api/ibkr/portfolio/accounts', async (req, res) => {
+// IBKR Accounts
+app.get('/api/ibkr/accounts', (req, res) => {
   try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, '/portfolio/accounts');
-    res.status(result.status).json(result.data);
+    const accounts = ibkrTws.getAccounts();
+    res.json(accounts);
   } catch (err) {
-    res.status(502).json({ error: 'Failed to get IBKR accounts', details: err.message });
+    res.status(502).json({ error: 'Failed to get accounts', details: err.message });
   }
 });
 
 // IBKR Account Summary
-app.get('/api/ibkr/portfolio/:accountId/summary', async (req, res) => {
+app.get('/api/ibkr/account/:accountId/summary', async (req, res) => {
   try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, `/portfolio/${encodeURIComponent(req.params.accountId)}/summary`);
-    res.status(result.status).json(result.data);
+    const data = await ibkrTws.getAccountSummary(req.params.accountId);
+    res.json(data);
   } catch (err) {
-    res.status(502).json({ error: 'Failed to get account summary' });
+    res.status(502).json({ error: 'Failed to get account summary', details: err.message });
   }
 });
 
 // IBKR Positions
-app.get('/api/ibkr/portfolio/:accountId/positions/:page', async (req, res) => {
+app.get('/api/ibkr/positions', async (req, res) => {
   try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, `/portfolio/${encodeURIComponent(req.params.accountId)}/positions/${req.params.page || 0}`);
-    res.status(result.status).json(result.data);
+    const data = await ibkrTws.getPositionsData();
+    res.json(data);
   } catch (err) {
-    res.status(502).json({ error: 'Failed to get positions' });
+    res.status(502).json({ error: 'Failed to get positions', details: err.message });
   }
 });
 
-// IBKR Contract Search
-app.post('/api/ibkr/iserver/secdef/search', async (req, res) => {
+// IBKR Symbol Search
+app.post('/api/ibkr/search', async (req, res) => {
   try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, '/iserver/secdef/search', {
-      method: 'POST',
-      body: JSON.stringify(req.body),
-    });
-    res.status(result.status).json(result.data);
+    const { symbol } = req.body || {};
+    if (!symbol) return res.status(400).json({ error: 'Symbol required' });
+    const results = await ibkrTws.searchSymbol(String(symbol));
+    res.json(results);
   } catch (err) {
-    res.status(502).json({ error: 'Contract search failed' });
+    res.status(502).json({ error: 'Symbol search failed', details: err.message });
   }
 });
 
-// IBKR Contract Info
-app.get('/api/ibkr/iserver/contract/:conid/info', async (req, res) => {
+// IBKR Contract Details
+app.get('/api/ibkr/contract/:conid', async (req, res) => {
   try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, `/iserver/contract/${req.params.conid}/info`);
-    res.status(result.status).json(result.data);
+    const data = await ibkrTws.getContractDetails(Number(req.params.conid));
+    res.json(data);
   } catch (err) {
-    res.status(502).json({ error: 'Contract info failed' });
+    res.status(502).json({ error: 'Contract details failed', details: err.message });
   }
 });
 
 // IBKR Market Data Snapshot
-app.get('/api/ibkr/iserver/marketdata/snapshot', async (req, res) => {
+app.get('/api/ibkr/quote/:conid', async (req, res) => {
   try {
-    const gw = getIbkrGateway(req);
-    const qs = new URLSearchParams(req.query).toString();
-    const result = await ibkrProxy(gw, `/iserver/marketdata/snapshot?${qs}`);
-    res.status(result.status).json(result.data);
+    const { exchange = 'SMART', currency = 'USD', secType = 'STK' } = req.query;
+    const data = await ibkrTws.getMarketSnapshot(
+      Number(req.params.conid), exchange, currency, secType
+    );
+    res.json(data);
   } catch (err) {
-    res.status(502).json({ error: 'Market data snapshot failed' });
-  }
-});
-
-// IBKR Unsubscribe Market Data
-app.delete('/api/ibkr/iserver/marketdata/:conid/unsubscribe', async (req, res) => {
-  try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, `/iserver/marketdata/${req.params.conid}/unsubscribe`, { method: 'DELETE' });
-    res.status(result.status).json(result.data);
-  } catch (err) {
-    res.status(502).json({ error: 'Unsubscribe failed' });
-  }
-});
-
-// IBKR Unsubscribe All
-app.get('/api/ibkr/iserver/marketdata/unsubscribeall', async (req, res) => {
-  try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, '/iserver/marketdata/unsubscribeall');
-    res.status(result.status).json(result.data);
-  } catch (err) {
-    res.status(502).json({ error: 'Unsubscribe all failed' });
+    res.status(502).json({ error: 'Market data snapshot failed', details: err.message });
   }
 });
 
 // IBKR Historical Data
-app.get('/api/ibkr/iserver/marketdata/history', async (req, res) => {
+app.get('/api/ibkr/history/:conid', async (req, res) => {
   try {
-    const gw = getIbkrGateway(req);
-    const qs = new URLSearchParams(req.query).toString();
-    const result = await ibkrProxy(gw, `/iserver/marketdata/history?${qs}`);
-    res.status(result.status).json(result.data);
+    const { interval = 'daily', exchange = 'SMART', currency = 'USD', secType = 'STK' } = req.query;
+    const data = await ibkrTws.getHistoricalData(
+      Number(req.params.conid), interval, exchange, currency, secType
+    );
+    res.json({ data });
   } catch (err) {
     console.error('IBKR history error:', err.message);
-    res.status(502).json({ error: 'Historical data failed' });
+    res.status(502).json({ error: 'Historical data failed', details: err.message });
   }
 });
 
-// IBKR Place Order
-app.post('/api/ibkr/iserver/account/:accountId/orders', async (req, res) => {
-  try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, `/iserver/account/${encodeURIComponent(req.params.accountId)}/orders`, {
-      method: 'POST',
-      body: JSON.stringify(req.body),
-    });
-    res.status(result.status).json(result.data);
-  } catch (err) {
-    res.status(502).json({ error: 'Order placement failed' });
+// IBKR Streaming Market Data (SSE)
+app.get('/api/ibkr/stream/:conid', (req, res) => {
+  if (!ibkrTws.isConnected()) {
+    return res.status(502).json({ error: 'Not connected to IBKR' });
   }
+
+  const conid = Number(req.params.conid);
+  const { exchange = 'SMART', currency = 'USD', secType = 'STK' } = req.query;
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  const sub = ibkrTws.subscribeMarketData(conid, exchange, currency, secType, (tick) => {
+    res.write(`data: ${JSON.stringify(tick)}\n\n`);
+  });
+
+  req.on('close', () => {
+    sub.unsubscribe();
+  });
 });
 
-// IBKR Confirm Order
-app.post('/api/ibkr/iserver/reply/:replyId', async (req, res) => {
-  try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, `/iserver/reply/${req.params.replyId}`, {
-      method: 'POST',
-      body: JSON.stringify(req.body),
-    });
-    res.status(result.status).json(result.data);
-  } catch (err) {
-    res.status(502).json({ error: 'Order confirmation failed' });
-  }
-});
-
-// IBKR Live Orders
-app.get('/api/ibkr/iserver/account/orders', async (req, res) => {
-  try {
-    const gw = getIbkrGateway(req);
-    const result = await ibkrProxy(gw, '/iserver/account/orders');
-    res.status(result.status).json(result.data);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to get orders' });
-  }
+// IBKR Unsubscribe All
+app.post('/api/ibkr/unsubscribe-all', (req, res) => {
+  ibkrTws.unsubscribeAllMarketData();
+  res.json({ ok: true });
 });
 
 app.get('/api/health', (_, res) => {
@@ -843,66 +776,6 @@ app.get('*', async (req, res, next) => {
 });
 
 const server = createServer(app);
-
-// ═══════════════════════════════════════════════════════════════
-// IBKR WebSocket Proxy
-// ═══════════════════════════════════════════════════════════════
-const wss = new WebSocketServer({ server, path: '/api/ibkr/ws' });
-
-wss.on('connection', (clientWs, req) => {
-  const gwUrl = process.env.IBKR_GATEWAY_URL || IBKR_GATEWAY_DEFAULT;
-  const ibkrWsUrl = gwUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/v1/api/ws';
-  
-  console.log(`[IBKR WS] Client connected, proxying to ${ibkrWsUrl}`);
-  
-  let ibkrWs;
-  try {
-    ibkrWs = new WebSocket(ibkrWsUrl, {
-      rejectUnauthorized: false, // IBKR uses self-signed certs
-    });
-  } catch (err) {
-    console.error('[IBKR WS] Failed to connect to gateway:', err.message);
-    clientWs.close(1011, 'Cannot connect to IBKR Gateway');
-    return;
-  }
-  
-  ibkrWs.on('open', () => {
-    console.log('[IBKR WS] Connected to IBKR Gateway');
-  });
-
-  ibkrWs.on('message', (data) => {
-    if (clientWs.readyState === WebSocket.OPEN) {
-      clientWs.send(data.toString());
-    }
-  });
-
-  ibkrWs.on('error', (err) => {
-    console.error('[IBKR WS] Gateway error:', err.message);
-    if (clientWs.readyState === WebSocket.OPEN) {
-      clientWs.send(JSON.stringify({ error: 'IBKR Gateway connection error' }));
-    }
-  });
-
-  ibkrWs.on('close', () => {
-    console.log('[IBKR WS] Gateway disconnected');
-    if (clientWs.readyState === WebSocket.OPEN) {
-      clientWs.close(1000, 'IBKR Gateway disconnected');
-    }
-  });
-
-  clientWs.on('message', (data) => {
-    if (ibkrWs.readyState === WebSocket.OPEN) {
-      ibkrWs.send(data.toString());
-    }
-  });
-
-  clientWs.on('close', () => {
-    console.log('[IBKR WS] Client disconnected');
-    if (ibkrWs.readyState === WebSocket.OPEN) {
-      ibkrWs.close();
-    }
-  });
-});
 
 server.listen(port, '0.0.0.0', () => {
   console.log(`Server listening on ${port}`);
