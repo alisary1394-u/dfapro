@@ -79,6 +79,46 @@ export function calcMACD(data, fast = 12, slow = 26, signal = 9) {
   return { macdLine, signalLine, histogram };
 }
 
+export function calcStochastic(data, kPeriod = 14, dPeriod = 3) {
+  const result = [];
+  for (let i = kPeriod - 1; i < data.length; i++) {
+    const slice = data.slice(i - kPeriod + 1, i + 1);
+    const highest = Math.max(...slice.map(d => d.high));
+    const lowest = Math.min(...slice.map(d => d.low));
+    const k = highest !== lowest ? ((data[i].close - lowest) / (highest - lowest)) * 100 : 50;
+    result.push({ time: data[i].time, k: parseFloat(k.toFixed(2)), d: 0 });
+  }
+  for (let i = 0; i < result.length; i++) {
+    if (i < dPeriod - 1) {
+      result[i].d = result[i].k;
+    } else {
+      const avg = result.slice(i - dPeriod + 1, i + 1).reduce((s, c) => s + c.k, 0) / dPeriod;
+      result[i].d = parseFloat(avg.toFixed(2));
+    }
+  }
+  return result;
+}
+
+export function toHeikinAshi(data) {
+  const result = [];
+  for (let i = 0; i < data.length; i++) {
+    const c = data[i];
+    const haClose = (c.open + c.high + c.low + c.close) / 4;
+    const haOpen = i === 0 ? (c.open + c.close) / 2 : (result[i - 1].open + result[i - 1].close) / 2;
+    const haHigh = Math.max(c.high, haOpen, haClose);
+    const haLow = Math.min(c.low, haOpen, haClose);
+    result.push({
+      time: c.time,
+      open: parseFloat(haOpen.toFixed(4)),
+      high: parseFloat(haHigh.toFixed(4)),
+      low: parseFloat(haLow.toFixed(4)),
+      close: parseFloat(haClose.toFixed(4)),
+      volume: c.volume,
+    });
+  }
+  return result;
+}
+
 export function calcBollingerBands(data, period = 20, multiplier = 2) {
   const upper = [], middle = [], lower = [];
   for (let i = period - 1; i < data.length; i++) {
