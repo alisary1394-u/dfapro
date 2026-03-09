@@ -304,7 +304,7 @@ function StockRow({ stock, market, isActive, onSelect }) {
   useEffect(() => {
     const fetchQuote = () => getQuote(stock.symbol, market).then(q => setQuote(q)).catch(() => {});
     fetchQuote();
-    const iv = setInterval(fetchQuote, 2000);
+    const iv = setInterval(fetchQuote, 10000);
     return () => clearInterval(iv);
   }, [stock.symbol, market]);
 
@@ -420,7 +420,7 @@ export default function ChartBoard() {
     setQuote(null);
     const fetchQuote = () => getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
     fetchQuote();
-    const iv = setInterval(fetchQuote, 1000);
+    const iv = setInterval(fetchQuote, 5000);
     return () => clearInterval(iv);
   }, [selectedStock, market]);
 
@@ -428,7 +428,7 @@ export default function ChartBoard() {
   useEffect(() => {
     if (!selectedStock) return;
     fetchCandles();
-    const iv = setInterval(fetchCandles, 3000);
+    const iv = setInterval(fetchCandles, 10000);
     return () => clearInterval(iv);
   }, [selectedStock, market, timeframe]);
 

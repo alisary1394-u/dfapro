@@ -377,7 +377,7 @@ export default function MarketWatch() {
 
   useEffect(() => {
     loadQuotes(stockList, true);
-    const iv = setInterval(() => silentRefresh(stockList), 1000);
+    const iv = setInterval(() => silentRefresh(stockList), 10000);
     return () => clearInterval(iv);
   }, [market]);
 

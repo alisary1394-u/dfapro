@@ -71,76 +71,142 @@ const createEntityProxy = (entityName) => ({
   },
 });
 
-// ─── Real Market Data via Server API ───────────────────────────────────────
+// ─── Real Market Data via Server API + Direct Yahoo Finance fallback ──────
 
-const fetchRealMarketData = async (params) => {
-  const { action, symbol, market, interval, limit, from, to, coin, currency } = params;
+// Deployed server URL (Railway/Render/etc.) - update this when deployed
+const DEPLOYED_API = import.meta.env.VITE_API_URL || '';
 
-  try {
-    let url;
-    switch (action) {
-      case 'quote':
-        url = `/api/market/quote?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}`;
-        break;
-      case 'candles':
-        url = `/api/market/candles?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}&interval=${encodeURIComponent(interval || 'daily')}&limit=${limit || 365}`;
-        break;
-      case 'overview':
-        url = `/api/market/overview?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}`;
-        break;
-      case 'indices':
-        url = '/api/market/indices';
-        break;
-      case 'forex':
-        url = `/api/market/forex?from=${encodeURIComponent(from || 'USD')}&to=${encodeURIComponent(to || 'SAR')}`;
-        break;
-      case 'crypto':
-        url = `/api/market/crypto?coin=${encodeURIComponent(coin || 'BTC')}&currency=${encodeURIComponent(currency || 'USD')}`;
-        break;
-      case 'top_movers':
-        url = `/api/market/top-movers?market=${encodeURIComponent(market || 'saudi')}`;
-        break;
-      case 'news':
-        url = `/api/market/news?symbol=${encodeURIComponent(symbol || '')}&market=${encodeURIComponent(market || 'saudi')}`;
-        break;
-      case 'batch_quotes':
-        url = `/api/market/batch-quotes?symbols=${encodeURIComponent(params.symbols || '')}&market=${encodeURIComponent(market || 'saudi')}`;
-        break
-      default:
-        return null;
-    }
+const YF_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
+const YF_SEARCH = 'https://query1.finance.yahoo.com/v1/finance/search';
 
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data.error) return null;
-
-    // Wrap response to match expected format
-    switch (action) {
-      case 'quote':
-        return { data };
-      case 'candles':
-        return { data: { candles: data.candles || [] } };
-      case 'overview':
-        return { data };
-      case 'indices':
-        return { data };
-      case 'forex':
-        return { data };
-      case 'crypto':
-        return { data };
-      case 'top_movers':
-        return { data };
-      case 'news':
-        return { data: { news: data.news || [] } };
-      case 'batch_quotes':
-        return { data };
-      default:
-        return { data };
-    }
-  } catch {
-    return null; // network error → fall back to mock
+const toYahooSymbol = (symbol, market) => {
+  if (market === 'saudi') {
+    if (['TASI', 'MI30', 'TFNI'].includes(symbol)) return '^TASI.SR';
+    return /^\d+$/.test(symbol) ? `${symbol}.SR` : symbol;
   }
+  if (['SPX', 'SP500'].includes(symbol)) return '^GSPC';
+  if (['NDX', 'NASDAQ'].includes(symbol)) return '^IXIC';
+  if (['DJI', 'DJIA'].includes(symbol)) return '^DJI';
+  return symbol;
+};
+
+const intervalMap = {
+  '1min': '1m', '5min': '5m', '15min': '15m', '30min': '30m', '60min': '60m',
+  'daily': '1d', 'weekly': '1wk', 'monthly': '1mo',
+};
+const rangeMap = {
+  '1m': '1d', '5m': '5d', '15m': '5d', '30m': '1mo', '60m': '1mo',
+  '1d': '1y', '1wk': '5y', '1mo': 'max',
+};
+
+const parseQuoteFromYF = (data, symbol) => {
+  const meta = data?.chart?.result?.[0]?.meta;
+  const quotes = data?.chart?.result?.[0]?.indicators?.quote?.[0];
+  if (!meta) return null;
+  const price = meta.regularMarketPrice ?? 0;
+  const prevClose = meta.previousClose ?? meta.chartPreviousClose ?? price;
+  const change = +(price - prevClose).toFixed(2);
+  const changePct = prevClose !== 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+  const highPrices = quotes?.high?.filter(v => v != null) || [];
+  const lowPrices = quotes?.low?.filter(v => v != null) || [];
+  const volumes = quotes?.volume?.filter(v => v != null) || [];
+  return {
+    price,
+    change,
+    change_percent: changePct,
+    volume: volumes.length > 0 ? volumes[volumes.length - 1] : 0,
+    high: highPrices.length > 0 ? Math.max(...highPrices) : price,
+    low: lowPrices.length > 0 ? Math.min(...lowPrices) : price,
+    name: meta.shortName || meta.symbol || symbol,
+    currency: meta.currency || 'USD',
+  };
+};
+
+const parseCandlesFromYF = (data) => {
+  const result = data?.chart?.result?.[0];
+  if (!result) return [];
+  const timestamps = result.timestamp || [];
+  const q = result.indicators?.quote?.[0] || {};
+  return timestamps.map((t, i) => ({
+    time: t,
+    open: q.open?.[i] ?? 0,
+    high: q.high?.[i] ?? 0,
+    low: q.low?.[i] ?? 0,
+    close: q.close?.[i] ?? 0,
+    volume: q.volume?.[i] ?? 0,
+  })).filter(c => c.open && c.close);
+};
+
+// Build API URL for an action
+const buildApiUrl = (baseUrl, params) => {
+  const { action, symbol, market, interval, limit, from, to, coin, currency } = params;
+  switch (action) {
+    case 'quote':
+      return `${baseUrl}/api/market/quote?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}`;
+    case 'candles':
+      return `${baseUrl}/api/market/candles?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}&interval=${encodeURIComponent(interval || 'daily')}&limit=${limit || 365}`;
+    case 'overview':
+      return `${baseUrl}/api/market/overview?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}`;
+    case 'indices':
+      return `${baseUrl}/api/market/indices`;
+    case 'forex':
+      return `${baseUrl}/api/market/forex?from=${encodeURIComponent(from || 'USD')}&to=${encodeURIComponent(to || 'SAR')}`;
+    case 'crypto':
+      return `${baseUrl}/api/market/crypto?coin=${encodeURIComponent(coin || 'BTC')}&currency=${encodeURIComponent(currency || 'USD')}`;
+    case 'top_movers':
+      return `${baseUrl}/api/market/top-movers?market=${encodeURIComponent(market || 'saudi')}`;
+    case 'news':
+      return `${baseUrl}/api/market/news?symbol=${encodeURIComponent(symbol || '')}&market=${encodeURIComponent(market || 'saudi')}`;
+    case 'batch_quotes':
+      return `${baseUrl}/api/market/batch-quotes?symbols=${encodeURIComponent(params.symbols || '')}&market=${encodeURIComponent(market || 'saudi')}`;
+    default:
+      return null;
+  }
+};
+
+const wrapApiResponse = (action, data) => {
+  switch (action) {
+    case 'quote': return { data };
+    case 'candles': return { data: { candles: data.candles || [] } };
+    case 'news': return { data: { news: data.news || [] } };
+    case 'batch_quotes': return { data };
+    default: return { data };
+  }
+};
+
+const tryFetchApi = async (url) => {
+  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.error) return null;
+  return data;
+};
+
+// Try local server first, then deployed server, then Yahoo Finance via CORS proxy
+const fetchRealMarketData = async (params) => {
+  const { action, symbol, market } = params;
+
+  // 1) Try local server API (same-origin or Vite proxy)
+  const localUrl = buildApiUrl('', params);
+  if (localUrl) {
+    try {
+      const data = await tryFetchApi(localUrl);
+      if (data) return wrapApiResponse(action, data);
+    } catch { /* local server not available */ }
+  }
+
+  // 2) Try deployed server (Railway/Render) if configured
+  if (DEPLOYED_API) {
+    const deployedUrl = buildApiUrl(DEPLOYED_API, params);
+    if (deployedUrl) {
+      try {
+        const data = await tryFetchApi(deployedUrl);
+        if (data) return wrapApiResponse(action, data);
+      } catch { /* deployed server not available */ }
+    }
+  }
+
+  return null;
 };
 
 // ─── Mock Market Data (fallback) ──────────────────────────────────────────

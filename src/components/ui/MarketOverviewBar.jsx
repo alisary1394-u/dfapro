@@ -28,7 +28,7 @@ export default function MarketOverviewBar({ compact = false }) {
 
   useEffect(() => {
     fetchData();
-    const iv = setInterval(() => fetchData(true), 3000);
+    const iv = setInterval(() => fetchData(true), 10000);
     return () => clearInterval(iv);
   }, []);
 
