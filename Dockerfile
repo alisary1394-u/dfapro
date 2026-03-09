@@ -16,13 +16,15 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine
+FROM node:18-alpine
+
+# Install a simple static server
+RUN npm install -g serve
 
 # Copy built files from builder
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dist /app/dist
 
-# Copy nginx configuration template
-COPY nginx.conf /etc/nginx/templates/default.conf.template
+WORKDIR /app
 
 # Default port for Railway if PORT is not injected
 ENV PORT=8080
@@ -30,4 +32,5 @@ ENV PORT=8080
 # Expose port
 EXPOSE 8080
 
-# Use the official nginx entrypoint, which renders templates in /etc/nginx/templates
+# Start the static server
+CMD ["sh", "-c", "serve -s dist -l ${PORT:-8080}"]
