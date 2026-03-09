@@ -10,7 +10,8 @@ import MiniChart from "@/components/ui/MiniChart";
 import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import { useDashboardLayout } from "@/components/dashboard/useDashboardLayout";
 import {
-  TrendingUp, TrendingDown, BarChart3, Activity, Flame, Brain, Sparkles, Target
+  TrendingUp, TrendingDown, BarChart3, Activity, Flame, Brain, Sparkles, Target,
+  CalendarDays, Globe2, DollarSign, Bitcoin
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -30,11 +31,20 @@ const sentimentByMarket = {
   ],
 };
 
-const volumeData = Array.from({ length: 12 }, (_, i) => ({
-  month: ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][i],
-  saudi: Math.floor(Math.random() * 5000 + 3000),
-  us: Math.floor(Math.random() * 8000 + 5000),
-}));
+const volumeData = [
+  { month: 'يناير',   saudi: 4200, us: 7800 },
+  { month: 'فبراير',  saudi: 5100, us: 8200 },
+  { month: 'مارس',    saudi: 3800, us: 6900 },
+  { month: 'أبريل',   saudi: 6200, us: 9100 },
+  { month: 'مايو',    saudi: 5800, us: 8700 },
+  { month: 'يونيو',   saudi: 4900, us: 7600 },
+  { month: 'يوليو',   saudi: 6800, us: 10200 },
+  { month: 'أغسطس',   saudi: 7200, us: 11000 },
+  { month: 'سبتمبر',  saudi: 5500, us: 8900 },
+  { month: 'أكتوبر',  saudi: 6100, us: 9400 },
+  { month: 'نوفمبر',  saudi: 7500, us: 11800 },
+  { month: 'ديسمبر',  saudi: 8200, us: 12500 },
+];
 
 const topGainersByMarket = {
   saudi: [
@@ -134,27 +144,37 @@ export default function Dashboard() {
   // Render individual widgets
   const widgetMap = {
     market_overview: (
-      <div key="market_overview" className="bg-[#151c2c] border border-[#1e293b] rounded-2xl p-4">
+      <div key="market_overview" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl p-4">
         <MarketOverviewBar />
       </div>
     ),
 
     live_rates: (forex || crypto) ? (
-      <div key="live_rates" className="bg-[#151c2c] border border-[#1e293b] rounded-xl px-4 py-3 flex flex-wrap items-center gap-5 text-sm">
-        <span className="text-xs font-bold text-[#d4a843] flex items-center gap-1.5">
+      <div key="live_rates" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl px-5 py-3.5 flex flex-wrap items-center gap-6 text-sm">
+        <span className="text-xs font-bold text-[#d4a843] flex items-center gap-1.5 shrink-0">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          أسعار حية
+          أسعار مباشرة
         </span>
         {forex && (
-          <div className="flex items-center gap-2">
-            <span className="text-[#94a3b8] text-xs">USD/SAR</span>
-            <span className="text-white font-bold">{forex.rate?.toFixed(4)}</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+              <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-[10px] text-[#475569]">USD/SAR</p>
+              <p className="text-sm font-black text-white">{forex.rate?.toFixed(4)}</p>
+            </div>
           </div>
         )}
         {crypto && (
-          <div className="flex items-center gap-2">
-            <span className="text-[#94a3b8] text-xs">BTC/USD</span>
-            <span className="text-white font-bold">{crypto.rate?.toLocaleString()}</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-[#f59e0b]/10 flex items-center justify-center">
+              <Bitcoin className="w-3.5 h-3.5 text-[#f59e0b]" />
+            </div>
+            <div>
+              <p className="text-[10px] text-[#475569]">BTC/USD</p>
+              <p className="text-sm font-black text-white">${crypto.rate?.toLocaleString()}</p>
+            </div>
           </div>
         )}
       </div>
@@ -163,30 +183,37 @@ export default function Dashboard() {
     quick_stats: (
       <div key="quick_stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {(market === "saudi" ? [
-          { label: "أسهم صاعدة", value: "127", icon: TrendingUp, color: "#10b981", bg: "from-emerald-500/10" },
-          { label: "أسهم هابطة", value: "89", icon: TrendingDown, color: "#ef4444", bg: "from-red-500/10" },
-          { label: "حجم التداول", value: "8.3B ر.س", icon: BarChart3, color: "#3b82f6", bg: "from-blue-500/10" },
-          { label: "الأكثر نشاطاً", value: "2222", icon: Activity, color: "#d4a843", bg: "from-[#d4a843]/10" },
+          { label: "أسهم صاعدة", value: "127", sub: "من 200 سهم", icon: TrendingUp, color: "#10b981", accent: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.15)" },
+          { label: "أسهم هابطة", value: "89", sub: "من 200 سهم", icon: TrendingDown, color: "#ef4444", accent: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.15)" },
+          { label: "حجم التداول", value: "8.3B", sub: "ريال سعودي", icon: BarChart3, color: "#3b82f6", accent: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.15)" },
+          { label: "الأكثر نشاطاً", value: "2222", sub: "أرامكو", icon: Activity, color: "#d4a843", accent: "rgba(212,168,67,0.08)", border: "rgba(212,168,67,0.15)" },
         ] : [
-          { label: "أسهم صاعدة", value: "312", icon: TrendingUp, color: "#10b981", bg: "from-emerald-500/10" },
-          { label: "أسهم هابطة", value: "198", icon: TrendingDown, color: "#ef4444", bg: "from-red-500/10" },
-          { label: "حجم التداول", value: "42.7B $", icon: BarChart3, color: "#3b82f6", bg: "from-blue-500/10" },
-          { label: "الأكثر نشاطاً", value: "NVDA", icon: Activity, color: "#d4a843", bg: "from-[#d4a843]/10" },
+          { label: "أسهم صاعدة", value: "312", sub: "من 500 سهم", icon: TrendingUp, color: "#10b981", accent: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.15)" },
+          { label: "أسهم هابطة", value: "198", sub: "من 500 سهم", icon: TrendingDown, color: "#ef4444", accent: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.15)" },
+          { label: "حجم التداول", value: "42.7B", sub: "دولار", icon: BarChart3, color: "#3b82f6", accent: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.15)" },
+          { label: "الأكثر نشاطاً", value: "NVDA", sub: "إنفيديا", icon: Activity, color: "#d4a843", accent: "rgba(212,168,67,0.08)", border: "rgba(212,168,67,0.15)" },
         ]).map((stat) => (
-          <div key={stat.label} className={`bg-gradient-to-br ${stat.bg} to-transparent bg-[#151c2c] border border-[#1e293b] rounded-2xl p-5`}>
-            <div className="flex items-center justify-between mb-3">
-              <stat.icon className="w-5 h-5" style={{ color: stat.color }} />
-              <MiniChart data={null} color={stat.color} height={30} />
+          <div
+            key={stat.label}
+            className="relative overflow-hidden rounded-2xl p-5 transition-all duration-200 hover:scale-[1.02]"
+            style={{ background: `linear-gradient(135deg, ${stat.accent} 0%, #0d1420 100%)`, border: `1px solid ${stat.border}` }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: stat.accent, border: `1px solid ${stat.border}` }}>
+                <stat.icon className="w-4.5 h-4.5" style={{ color: stat.color }} />
+              </div>
+              <MiniChart data={null} color={stat.color} height={28} />
             </div>
-            <p className="text-2xl font-bold text-white">{stat.value}</p>
-            <p className="text-xs text-[#94a3b8] mt-1">{stat.label}</p>
+            <p className="text-3xl font-black text-white tracking-tight">{stat.value}</p>
+            <p className="text-xs font-medium mt-0.5" style={{ color: stat.color }}>{stat.sub}</p>
+            <p className="text-[11px] text-[#475569] mt-1">{stat.label}</p>
           </div>
         ))}
       </div>
     ),
 
     ai_insights: (
-      <div key="ai_insights" className="relative overflow-hidden bg-gradient-to-l from-[#d4a843]/20 via-[#151c2c] to-[#151c2c] border border-[#d4a843]/30 rounded-2xl p-6">
+      <div key="ai_insights" className="relative overflow-hidden bg-gradient-to-l from-[#d4a843]/20 via-[#0d1420] to-[#0d1420] border border-[#d4a843]/25 rounded-2xl p-6">
         <div className="absolute top-0 left-0 w-64 h-64 bg-[#d4a843]/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
         <div className="relative flex items-center gap-4 flex-wrap">
           <div className="p-3 rounded-xl bg-[#d4a843]/20 shrink-0">
@@ -211,7 +238,7 @@ export default function Dashboard() {
     ),
 
     volume_chart: (
-      <div key="volume_chart" className="bg-[#151c2c] border border-[#1e293b] rounded-2xl p-6">
+      <div key="volume_chart" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-bold text-white">حجم التداول الشهري</h2>
           <div className="flex gap-2 bg-[#1e293b] rounded-xl p-1">
@@ -235,10 +262,10 @@ export default function Dashboard() {
                   <stop offset="100%" stopColor="#d4a843" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ backgroundColor: '#151c2c', border: '1px solid #1e293b', borderRadius: '12px', color: '#fff' }} itemStyle={{ color: '#d4a843' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#1a2540" />
+              <XAxis dataKey="month" tick={{ fill: '#475569', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#475569', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ backgroundColor: '#0d1420', border: '1px solid #1a2540', borderRadius: '12px', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} itemStyle={{ color: '#d4a843' }} />
               <Area type="monotone" dataKey={market} stroke="#d4a843" strokeWidth={2} fill="url(#colorVolume)" />
             </AreaChart>
           </ResponsiveContainer>
@@ -247,7 +274,7 @@ export default function Dashboard() {
     ),
 
     sentiment: (
-      <div key="sentiment" className="bg-[#151c2c] border border-[#1e293b] rounded-2xl p-6">
+      <div key="sentiment" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl p-6">
         <h2 className="text-lg font-bold text-white mb-4">مشاعر السوق</h2>
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
@@ -255,7 +282,7 @@ export default function Dashboard() {
               <Pie data={marketSentimentData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" stroke="none">
                 {marketSentimentData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
               </Pie>
-              <Tooltip contentStyle={{ backgroundColor: '#151c2c', border: '1px solid #1e293b', borderRadius: '12px', color: '#fff' }} />
+              <Tooltip contentStyle={{ backgroundColor: '#0d1420', border: '1px solid #1a2540', borderRadius: '12px', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -271,7 +298,7 @@ export default function Dashboard() {
     ),
 
     top_gainers: (
-      <div key="top_gainers" className="bg-[#151c2c] border border-[#1e293b] rounded-2xl p-6">
+      <div key="top_gainers" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl p-6">
         <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
           <Flame className="w-5 h-5 text-emerald-400" /> الأكثر ارتفاعاً
           {isLive && <span className="text-xs font-bold px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center gap-1 mr-auto"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />مباشر</span>}
@@ -283,7 +310,7 @@ export default function Dashboard() {
     ),
 
     top_losers: (
-      <div key="top_losers" className="bg-[#151c2c] border border-[#1e293b] rounded-2xl p-6">
+      <div key="top_losers" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl p-6">
         <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
           <TrendingDown className="w-5 h-5 text-red-400" /> الأكثر انخفاضاً
           {isLive && <span className="text-xs font-bold px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center gap-1 mr-auto"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />مباشر</span>}
@@ -301,15 +328,15 @@ export default function Dashboard() {
     ),
 
     sector_performance: (
-      <div key="sector_performance" className="bg-[#151c2c] border border-[#1e293b] rounded-2xl p-6">
+      <div key="sector_performance" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl p-6">
         <h2 className="text-lg font-bold text-white mb-6">أداء القطاعات</h2>
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={sectorPerformance} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
-              <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="sector" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} width={100} />
-              <Tooltip contentStyle={{ backgroundColor: '#151c2c', border: '1px solid #1e293b', borderRadius: '12px', color: '#fff' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#1a2540" horizontal={false} />
+              <XAxis type="number" tick={{ fill: '#475569', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="sector" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} width={100} />
+              <Tooltip contentStyle={{ backgroundColor: '#0d1420', border: '1px solid #1a2540', borderRadius: '12px', color: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} />
               <Bar dataKey="change" radius={[0, 6, 6, 0]}>
                 {sectorPerformance.map((entry, index) => <Cell key={index} fill={entry.change >= 0 ? '#10b981' : '#ef4444'} />)}
               </Bar>
@@ -375,14 +402,24 @@ export default function Dashboard() {
     if (node) rendered.push(node);
   }
 
+  const today = new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
   return (
     <div className="space-y-6">
-      {/* Header with customizer */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl font-bold text-white">لوحة التحكم</h1>
+      {/* ── Professional Page Header ── */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-white tracking-tight">
+            لوحة التحكم
+          </h1>
+          <p className="text-sm text-[#475569] mt-1 flex items-center gap-1.5">
+            <CalendarDays className="w-3.5 h-3.5" />
+            {today}
+          </p>
+        </div>
         <div className="flex items-center gap-3">
           {/* Market Selector */}
-          <div className="flex gap-1 bg-[#151c2c] border border-[#1e293b] rounded-xl p-1">
+          <div className="flex gap-1 bg-[#0d1420] border border-[#1a2540] rounded-xl p-1">
             {[
               { value: "saudi", label: "🇸🇦 السعودي" },
               { value: "us", label: "🇺🇸 الأمريكي" },
@@ -390,10 +427,10 @@ export default function Dashboard() {
               <button
                 key={m.value}
                 onClick={() => updateMarket(m.value)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
                   market === m.value
-                    ? "bg-[#d4a843] text-black"
-                    : "text-[#94a3b8] hover:text-white"
+                    ? "bg-gradient-to-r from-[#d4a843] to-[#c9993a] text-black shadow-md shadow-[#d4a843]/20"
+                    : "text-[#475569] hover:text-[#94a3b8]"
                 }`}
               >
                 {m.label}

@@ -24,8 +24,20 @@ const AuthenticatedApp = () => {
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-[#070b12]" dir="rtl">
+        <div className="relative mb-6">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#d4a843] via-[#c9993a] to-[#b8922f] flex items-center justify-center shadow-2xl shadow-[#d4a843]/25">
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          </div>
+          <div className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-[#d4a843]/20 to-transparent blur-lg" />
+        </div>
+        <p className="text-lg font-black text-white mb-1" style={{ fontFamily: 'Tajawal, sans-serif' }}>محلل الأسهم Pro</p>
+        <p className="text-sm text-[#475569] mb-8" style={{ fontFamily: 'Tajawal, sans-serif' }}>جاري التحميل...</p>
+        <div className="relative w-48 h-1 bg-[#0d1420] rounded-full overflow-hidden">
+          <div className="absolute inset-y-0 right-0 bg-gradient-to-l from-[#d4a843] to-[#e8c76a] rounded-full animate-pulse" style={{ width: '60%' }} />
+        </div>
       </div>
     );
   }
