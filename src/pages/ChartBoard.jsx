@@ -1,11 +1,35 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
-import { createChart } from "lightweight-charts";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createChart, CrosshairMode, LineStyle } from "lightweight-charts";
 import { base44 } from "@/api/base44Client";
 import { getQuote } from "@/components/api/marketDataClient";
+import ibkrClient, {
+  ibkrConfig,
+  checkAuthStatus,
+  reauthenticate,
+  tickle,
+  getAccounts,
+  getAccountSummary,
+  getPositions,
+  searchContract,
+  getMarketSnapshot,
+  getHistoricalData,
+  createMarketDataStream,
+  parseSnapshotToQuote,
+  parseHistoryToCandles,
+  parseStreamUpdate,
+  unsubscribeAll,
+} from "@/components/api/ibkrClient";
 import {
   Search, Brain, RefreshCw, Loader2, BarChart3,
-  ArrowUpRight, ArrowDownRight, ChevronDown, X,
-  Maximize2, Minimize2, Layers
+  ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp, X,
+  Maximize2, Minimize2, Layers, Settings, TrendingUp,
+  Minus, Circle, Square, Triangle, Hash, Type,
+  ArrowRight, Crosshair, MousePointer, Ruler, Percent,
+  PenTool, Move, Trash2, Eye, EyeOff,
+  Magnet, Camera, RotateCcw, ChevronLeft, ChevronRight,
+  Activity, LineChart, BarChart2,
+  Star, Plus, Volume2, Clock, Calendar, Globe, Info,
+  Link2, Unlink2, Zap, CheckCircle2, AlertCircle, Wifi, WifiOff
 } from "lucide-react";
 import {
   calcEMA, calcSMA, calcRSI, calcMACD, calcBollingerBands,
@@ -43,12 +67,13 @@ const US_STOCKS = [
 // ═══════════════════════════════════════════════════════════════
 const TIMEFRAMES = [
   { label: "1د", value: "1M", interval: "1min", limit: 100 },
-  { label: "5د", value: "5M", interval: "5min", limit: 100 },
-  { label: "15د", value: "15M", interval: "15min", limit: 100 },
-  { label: "1س", value: "1H", interval: "60min", limit: 200 },
-  { label: "يومي", value: "1D", interval: "daily", limit: 365 },
-  { label: "أسبوعي", value: "1W", interval: "weekly", limit: 260 },
-  { label: "شهري", value: "1MO", interval: "monthly", limit: 120 },
+  { label: "5د", value: "5M", interval: "5min", limit: 200 },
+  { label: "15د", value: "15M", interval: "15min", limit: 200 },
+  { label: "30د", value: "30M", interval: "30min", limit: 200 },
+  { label: "1س", value: "1H", interval: "60min", limit: 300 },
+  { label: "يوم", value: "1D", interval: "daily", limit: 365 },
+  { label: "أسبوع", value: "1W", interval: "weekly", limit: 260 },
+  { label: "شهر", value: "1MO", interval: "monthly", limit: 120 },
 ];
 
 const CHART_TYPES = [
@@ -60,22 +85,41 @@ const CHART_TYPES = [
 ];
 
 const C = {
-  bg: "#060a11", card: "#0d1420", border: "#1a2540",
-  up: "#00c087", down: "#ff4757", gold: "#d4a843",
-  dim: "#475569", muted: "#64748b",
+  bg: "#0c0e14", card: "#131722", surface: "#1e222d", border: "#2a2e39",
+  up: "#26a69a", down: "#ef5350", gold: "#d4a843",
+  text: "#d1d4dc", dim: "#787b86", muted: "#434651",
+  blue: "#2962ff", purple: "#7b2ff7", orange: "#ff9800",
 };
 
+const DRAWING_TOOLS = [
+  { id: "cursor", icon: MousePointer, label: "مؤشر", group: "pointer" },
+  { id: "crosshair", icon: Crosshair, label: "تقاطع", group: "pointer" },
+  { id: "trendline", icon: TrendingUp, label: "خط اتجاه", group: "lines" },
+  { id: "horizontal", icon: Minus, label: "خط أفقي", group: "lines" },
+  { id: "ray", icon: ArrowRight, label: "شعاع", group: "lines" },
+  { id: "fib", icon: Percent, label: "فيبوناتشي", group: "fib" },
+  { id: "rect", icon: Square, label: "مستطيل", group: "shapes" },
+  { id: "circle", icon: Circle, label: "دائرة", group: "shapes" },
+  { id: "triangle", icon: Triangle, label: "مثلث", group: "shapes" },
+  { id: "text", icon: Type, label: "نص", group: "text" },
+  { id: "note", icon: Hash, label: "ملاحظة", group: "text" },
+  { id: "measure", icon: Ruler, label: "قياس", group: "measure" },
+  { id: "pen", icon: PenTool, label: "رسم حر", group: "draw" },
+];
+
 const chartOpts = (container) => ({
-  layout: { background: { color: C.bg }, textColor: C.dim },
-  grid: { vertLines: { color: "#0d1420" }, horzLines: { color: "#0d1420" } },
+  layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 11 },
+  grid: { vertLines: { color: "#1e222d40" }, horzLines: { color: "#1e222d40" } },
   width: container.clientWidth,
   crosshair: {
-    mode: 0,
-    vertLine: { color: "rgba(212,168,67,0.3)", labelBackgroundColor: C.gold },
-    horzLine: { color: "rgba(212,168,67,0.3)", labelBackgroundColor: C.gold },
+    mode: CrosshairMode.Normal,
+    vertLine: { color: "rgba(42,46,57,0.8)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: C.surface },
+    horzLine: { color: "rgba(42,46,57,0.8)", width: 1, style: LineStyle.Dashed, labelBackgroundColor: C.surface },
   },
-  timeScale: { borderColor: C.border, timeVisible: true, secondsVisible: false },
-  rightPriceScale: { borderColor: C.border, textColor: C.dim },
+  timeScale: { borderColor: C.border, timeVisible: true, secondsVisible: false, rightOffset: 5, barSpacing: 8 },
+  rightPriceScale: { borderColor: C.border, textColor: C.dim, scaleMargins: { top: 0.05, bottom: 0.18 } },
+  handleScale: { axisPressedMouseMove: { time: true, price: true } },
+  handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
 });
 
 const calcVWAP = (data) => {
@@ -87,6 +131,211 @@ const calcVWAP = (data) => {
     return { time: c.time, value: cumVol > 0 ? parseFloat((cumVP / cumVol).toFixed(4)) : tp };
   });
 };
+
+const formatVol = (v) => {
+  if (!v) return "-";
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + "B";
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(0) + "K";
+  return v.toString();
+};
+
+// ═══════════════════════════════════════════════════════════════
+// IBKR CONNECTION PANEL
+// ═══════════════════════════════════════════════════════════════
+function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
+  const [gatewayUrl, setGatewayUrl] = useState(
+    ibkrConfig.getConfig()?.gatewayUrl || 'https://localhost:5000'
+  );
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState('');
+  const [accounts, setAccounts] = useState([]);
+  const [accountSummary, setAccountSummary] = useState(null);
+  const [positions, setPositions] = useState([]);
+
+  const doConnect = async () => {
+    setChecking(true);
+    setError('');
+    try {
+      const status = await checkAuthStatus();
+      if (status.authenticated || status.connected) {
+        ibkrConfig.saveConfig({ gatewayUrl, connected: true });
+        setIbkrState(prev => ({ ...prev, connected: true, authenticated: true }));
+        // fetch accounts
+        try {
+          const accts = await getAccounts();
+          const acctList = Array.isArray(accts) ? accts : [];
+          setAccounts(acctList);
+          setIbkrState(prev => ({ ...prev, accounts: acctList }));
+          if (acctList.length > 0) {
+            const selectedAcct = acctList[0]?.accountId || acctList[0]?.id;
+            setIbkrState(prev => ({ ...prev, selectedAccount: selectedAcct }));
+            try {
+              const summary = await getAccountSummary(selectedAcct);
+              setAccountSummary(summary);
+            } catch {}
+            try {
+              const pos = await getPositions(selectedAcct);
+              setPositions(Array.isArray(pos) ? pos : []);
+            } catch {}
+          }
+        } catch {}
+      } else {
+        setError('بوابة IBKR تعمل لكن لم يتم تسجيل الدخول. يرجى فتح بوابة العميل وتسجيل الدخول أولاً.');
+      }
+    } catch (err) {
+      setError('تعذر الاتصال ببوابة IBKR. تأكد من تشغيل IB Gateway على العنوان المحدد.');
+    }
+    setChecking(false);
+  };
+
+  const doDisconnect = () => {
+    ibkrConfig.clearConfig();
+    setIbkrState({ connected: false, authenticated: false, accounts: [], selectedAccount: null, useIbkr: false });
+    setAccounts([]);
+    setAccountSummary(null);
+    setPositions([]);
+  };
+
+  const toggleDataSource = () => {
+    setIbkrState(prev => ({
+      ...prev,
+      useIbkr: !prev.useIbkr
+    }));
+  };
+
+  return (
+    <div className="absolute top-2 right-14 w-[320px] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden" dir="rtl">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[#2a2e39] bg-[#1e222d]">
+        <div className="flex items-center gap-1.5">
+          <Zap className="w-4 h-4 text-[#ff9800]" />
+          <span className="text-xs font-bold text-[#ff9800]">Interactive Brokers</span>
+        </div>
+        <button onClick={onClose} className="p-1 hover:bg-[#2a2e39] rounded text-[#787b86] transition-colors"><X className="w-3.5 h-3.5" /></button>
+      </div>
+
+      <div className="p-3 space-y-3 max-h-[70vh] overflow-y-auto custom-scrollbar">
+        {/* Connection Status */}
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${ibkrState.connected ? 'bg-[#26a69a]/10 border-[#26a69a]/30' : 'bg-[#ef5350]/10 border-[#ef5350]/30'}`}>
+          {ibkrState.connected ? <Wifi className="w-4 h-4 text-[#26a69a]" /> : <WifiOff className="w-4 h-4 text-[#ef5350]" />}
+          <span className={`text-xs font-bold ${ibkrState.connected ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+            {ibkrState.connected ? 'متصل ببوابة IBKR' : 'غير متصل'}
+          </span>
+        </div>
+
+        {/* Gateway URL */}
+        <div className="space-y-1">
+          <label className="text-[10px] text-[#787b86] font-bold">عنوان بوابة IB Gateway</label>
+          <input
+            value={gatewayUrl}
+            onChange={e => setGatewayUrl(e.target.value)}
+            placeholder="https://localhost:5000"
+            className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded px-3 py-1.5 text-[11px] text-[#d1d4dc] placeholder-[#434651] outline-none focus:border-[#ff9800]/50 transition-colors font-mono"
+            dir="ltr"
+          />
+        </div>
+
+        {/* Connect / Disconnect buttons */}
+        {!ibkrState.connected ? (
+          <button onClick={doConnect} disabled={checking}
+            className="w-full py-2 text-[11px] font-bold text-white bg-[#ff9800] rounded-lg hover:bg-[#f57c00] disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+            {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+            {checking ? 'جاري الاتصال...' : 'اتصل بالبوابة'}
+          </button>
+        ) : (
+          <div className="space-y-2">
+            {/* Data source toggle */}
+            <div className="flex items-center justify-between bg-[#0c0e14] rounded-lg p-2.5 cursor-pointer" onClick={toggleDataSource}>
+              <span className="text-[11px] text-[#d1d4dc]">استخدام بيانات IBKR</span>
+              <div className={`w-9 h-[20px] rounded-full transition-all relative ${ibkrState.useIbkr ? 'bg-[#ff9800]' : 'bg-[#434651]'}`}>
+                <span className={`absolute top-[2px] w-[16px] h-[16px] bg-white rounded-full transition-all shadow-sm ${ibkrState.useIbkr ? 'right-[2px]' : 'left-[2px]'}`} />
+              </div>
+            </div>
+
+            {/* Account info */}
+            {accounts.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-bold text-[#787b86]">الحسابات</div>
+                {accounts.map((acct, i) => (
+                  <div key={i} className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all ${
+                    ibkrState.selectedAccount === (acct.accountId || acct.id)
+                      ? 'bg-[#ff9800]/10 border-[#ff9800]/30'
+                      : 'bg-[#0c0e14] border-[#2a2e39] hover:border-[#434651]'
+                  }`} onClick={() => setIbkrState(prev => ({ ...prev, selectedAccount: acct.accountId || acct.id }))}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-[#787b86]">{acct.type || 'حساب'}</span>
+                      <span className="text-[11px] font-bold text-[#d1d4dc] font-mono">{acct.accountId || acct.id}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Account summary */}
+            {accountSummary && (
+              <div className="space-y-0">
+                <div className="text-[10px] font-bold text-[#787b86] mb-1">ملخص الحساب</div>
+                {[
+                  { label: 'صافي القيمة', value: accountSummary.netliquidation?.amount || accountSummary.totalcashvalue?.amount },
+                  { label: 'القوة الشرائية', value: accountSummary.buyingpower?.amount },
+                  { label: 'P&L اليوم', value: accountSummary.dailypnl?.amount },
+                ].filter(r => r.value != null).map((r, i) => (
+                  <div key={i} className="flex justify-between py-1 border-b border-[#2a2e39]/50">
+                    <span className="text-[10px] text-[#787b86]">{r.label}</span>
+                    <span className="text-[10px] font-bold text-[#d1d4dc]">${typeof r.value === 'number' ? r.value.toLocaleString() : r.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Positions */}
+            {positions.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[10px] font-bold text-[#787b86]">المراكز المفتوحة ({positions.length})</div>
+                <div className="max-h-[120px] overflow-y-auto custom-scrollbar space-y-0.5">
+                  {positions.map((pos, i) => (
+                    <div key={i} className="flex items-center justify-between px-2 py-1 rounded bg-[#0c0e14] text-[10px]">
+                      <div>
+                        <span className="font-bold text-[#d1d4dc]">{pos.contractDesc || pos.ticker}</span>
+                        <span className="text-[#787b86] mr-1">×{pos.position}</span>
+                      </div>
+                      <span className={`font-bold ${(pos.unrealizedPnl || 0) >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+                        {(pos.unrealizedPnl || 0) >= 0 ? '+' : ''}{(pos.unrealizedPnl || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button onClick={doDisconnect}
+              className="w-full py-2 text-[11px] font-bold text-[#ef5350] border border-[#ef5350]/30 rounded-lg hover:bg-[#ef5350]/10 transition-all flex items-center justify-center gap-2">
+              <Unlink2 className="w-3.5 h-3.5" /> قطع الاتصال
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 p-2 rounded-lg bg-[#ef5350]/10 border border-[#ef5350]/20">
+            <AlertCircle className="w-3.5 h-3.5 text-[#ef5350] shrink-0 mt-0.5" />
+            <p className="text-[10px] text-[#ef5350] leading-relaxed">{error}</p>
+          </div>
+        )}
+
+        {/* Instructions */}
+        <div className="bg-[#0c0e14] rounded-lg p-2.5 space-y-1.5 border border-[#2a2e39]/50">
+          <p className="text-[10px] font-bold text-[#787b86]">خطوات الإعداد:</p>
+          <ol className="text-[9px] text-[#787b86] space-y-1 list-decimal pr-4 leading-relaxed">
+            <li>قم بتحميل <span className="text-[#ff9800] font-bold">IB Gateway</span> أو <span className="text-[#ff9800] font-bold">Client Portal Gateway</span></li>
+            <li>شغّل البوابة (المنفذ الافتراضي: 5000)</li>
+            <li>سجّل الدخول عبر واجهة البوابة في المتصفح</li>
+            <li>ارجع هنا واضغط "اتصل بالبوابة"</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════
 // AI ANALYSIS PANEL
@@ -161,85 +410,85 @@ function AiPanel({ symbol, market, candles, onClose }) {
     : result?.risk_level?.includes("منخفض") ? C.up : C.gold;
 
   return (
-    <div className="absolute top-2 left-2 w-72 bg-[#0d1420]/98 border border-[#d4a843]/25 rounded-xl shadow-2xl z-30 backdrop-blur-xl">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#1a2540]">
+    <div className="absolute top-2 left-14 w-[280px] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[#2a2e39] bg-[#1e222d]">
         <div className="flex items-center gap-1.5">
           <Brain className="w-4 h-4 text-[#d4a843]" />
-          <span className="text-xs font-bold text-[#d4a843]">محلل الذكاء الاصطناعي</span>
+          <span className="text-xs font-bold text-[#d4a843]">تحليل الذكاء الاصطناعي</span>
         </div>
-        <button onClick={onClose} className="p-1 hover:bg-[#1a2540] rounded text-[#64748b] transition-colors"><X className="w-3.5 h-3.5" /></button>
+        <button onClick={onClose} className="p-1 hover:bg-[#2a2e39] rounded text-[#787b86] transition-colors"><X className="w-3.5 h-3.5" /></button>
       </div>
-      <div className="p-3 space-y-2 max-h-[70vh] overflow-y-auto custom-scrollbar">
+      <div className="p-3 space-y-2 max-h-[65vh] overflow-y-auto custom-scrollbar">
         {loading ? (
           <div className="flex flex-col items-center py-8 gap-2">
             <Loader2 className="w-7 h-7 text-[#d4a843] animate-spin" />
-            <span className="text-xs text-[#64748b]">يحلل البيانات الفنية...</span>
+            <span className="text-xs text-[#787b86]">يحلل البيانات الفنية...</span>
           </div>
         ) : result ? (
           <>
-            <div className="flex items-center justify-between bg-[#060a11] rounded-lg p-2.5">
-              <span className="text-[10px] text-[#64748b]">التوصية</span>
+            <div className="flex items-center justify-between bg-[#0c0e14] rounded-lg p-2.5">
+              <span className="text-[10px] text-[#787b86]">التوصية</span>
               <span className="text-sm font-black px-3 py-0.5 rounded-full" style={{ color: recColor, backgroundColor: `${recColor}15`, border: `1px solid ${recColor}40` }}>
                 {result.recommendation}
               </span>
             </div>
-            <div className="bg-[#060a11] rounded-lg p-2.5">
+            <div className="bg-[#0c0e14] rounded-lg p-2.5">
               <div className="flex justify-between mb-1">
-                <span className="text-[10px] text-[#64748b]">الاتجاه</span>
-                <span className="text-xs font-bold text-white">{result.trend}</span>
+                <span className="text-[10px] text-[#787b86]">الاتجاه</span>
+                <span className="text-xs font-bold text-[#d1d4dc]">{result.trend}</span>
               </div>
-              {result.trend_reason && <p className="text-[9px] text-[#475569] leading-relaxed">{result.trend_reason}</p>}
+              {result.trend_reason && <p className="text-[9px] text-[#787b86] leading-relaxed">{result.trend_reason}</p>}
             </div>
             <div className="grid grid-cols-2 gap-1.5">
-              <div className="bg-[#00c087]/8 border border-[#00c087]/15 rounded-lg p-2 text-center">
-                <p className="text-[8px] text-[#64748b]">دعم</p>
-                <p className="text-xs font-bold text-[#00c087]">{result.support?.toFixed(2)}</p>
+              <div className="bg-[#26a69a]/10 border border-[#26a69a]/20 rounded-lg p-2 text-center">
+                <p className="text-[8px] text-[#787b86]">دعم</p>
+                <p className="text-xs font-bold text-[#26a69a]">{result.support?.toFixed(2)}</p>
               </div>
-              <div className="bg-[#ff4757]/8 border border-[#ff4757]/15 rounded-lg p-2 text-center">
-                <p className="text-[8px] text-[#64748b]">مقاومة</p>
-                <p className="text-xs font-bold text-[#ff4757]">{result.resistance?.toFixed(2)}</p>
+              <div className="bg-[#ef5350]/10 border border-[#ef5350]/20 rounded-lg p-2 text-center">
+                <p className="text-[8px] text-[#787b86]">مقاومة</p>
+                <p className="text-xs font-bold text-[#ef5350]">{result.resistance?.toFixed(2)}</p>
               </div>
               {result.entry_point && (
-                <div className="bg-[#3b82f6]/8 border border-[#3b82f6]/15 rounded-lg p-2 text-center">
-                  <p className="text-[8px] text-[#64748b]">نقطة الدخول</p>
-                  <p className="text-xs font-bold text-[#3b82f6]">{result.entry_point?.toFixed(2)}</p>
+                <div className="bg-[#2962ff]/10 border border-[#2962ff]/20 rounded-lg p-2 text-center">
+                  <p className="text-[8px] text-[#787b86]">نقطة الدخول</p>
+                  <p className="text-xs font-bold text-[#2962ff]">{result.entry_point?.toFixed(2)}</p>
                 </div>
               )}
               {result.exit_point && (
-                <div className="bg-[#a855f7]/8 border border-[#a855f7]/15 rounded-lg p-2 text-center">
-                  <p className="text-[8px] text-[#64748b]">نقطة الخروج</p>
-                  <p className="text-xs font-bold text-[#a855f7]">{result.exit_point?.toFixed(2)}</p>
+                <div className="bg-[#7b2ff7]/10 border border-[#7b2ff7]/20 rounded-lg p-2 text-center">
+                  <p className="text-[8px] text-[#787b86]">نقطة الخروج</p>
+                  <p className="text-xs font-bold text-[#7b2ff7]">{result.exit_point?.toFixed(2)}</p>
                 </div>
               )}
             </div>
             <div className="flex gap-1.5">
               {result.momentum && (
-                <div className="flex-1 bg-[#060a11] rounded-lg p-2 text-center">
-                  <p className="text-[8px] text-[#64748b]">الزخم</p>
-                  <p className="text-[10px] font-bold text-white">{result.momentum}</p>
+                <div className="flex-1 bg-[#0c0e14] rounded-lg p-2 text-center">
+                  <p className="text-[8px] text-[#787b86]">الزخم</p>
+                  <p className="text-[10px] font-bold text-[#d1d4dc]">{result.momentum}</p>
                 </div>
               )}
               {result.risk_level && (
-                <div className="flex-1 bg-[#060a11] rounded-lg p-2 text-center">
-                  <p className="text-[8px] text-[#64748b]">المخاطرة</p>
+                <div className="flex-1 bg-[#0c0e14] rounded-lg p-2 text-center">
+                  <p className="text-[8px] text-[#787b86]">المخاطرة</p>
                   <p className="text-[10px] font-bold" style={{ color: riskColor }}>{result.risk_level}</p>
                 </div>
               )}
             </div>
-            {result.confidence && (
-              <div className="bg-[#060a11] rounded-lg p-2">
+            {result.confidence != null && (
+              <div className="bg-[#0c0e14] rounded-lg p-2">
                 <div className="flex justify-between mb-1">
-                  <span className="text-[9px] text-[#64748b]">ثقة التحليل</span>
-                  <span className="text-[9px] text-white font-bold">{result.confidence}%</span>
+                  <span className="text-[9px] text-[#787b86]">ثقة التحليل</span>
+                  <span className="text-[9px] text-[#d1d4dc] font-bold">{result.confidence}%</span>
                 </div>
-                <div className="h-1.5 bg-[#1a2540] rounded-full overflow-hidden">
+                <div className="h-1.5 bg-[#2a2e39] rounded-full overflow-hidden">
                   <div className="h-full rounded-full" style={{ width: `${result.confidence}%`, background: `linear-gradient(90deg, ${C.gold}, #f59e0b)` }} />
                 </div>
               </div>
             )}
             {result.note && (
               <div className="bg-[#d4a843]/5 border border-[#d4a843]/15 rounded-lg p-2">
-                <p className="text-[10px] text-[#94a3b8] leading-relaxed">💡 {result.note}</p>
+                <p className="text-[10px] text-[#d1d4dc] leading-relaxed">💡 {result.note}</p>
               </div>
             )}
             <button onClick={analyze} className="w-full py-2 text-[10px] font-bold text-[#d4a843] border border-[#d4a843]/30 rounded-lg hover:bg-[#d4a843]/10 transition-all flex items-center justify-center gap-1.5">
@@ -253,6 +502,55 @@ function AiPanel({ symbol, market, candles, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// DRAWING TOOLS SIDEBAR (LEFT - TradingView style)
+// ═══════════════════════════════════════════════════════════════
+function DrawingToolbar({ activeTool, setActiveTool, onClearAll, onUndo }) {
+  const groups = {};
+  DRAWING_TOOLS.forEach(t => {
+    if (!groups[t.group]) groups[t.group] = [];
+    groups[t.group].push(t);
+  });
+
+  return (
+    <div className="w-[42px] shrink-0 bg-[#131722] border-r border-[#2a2e39] flex flex-col items-center py-1 gap-0.5 overflow-y-auto custom-scrollbar">
+      {Object.entries(groups).map(([group, tools], gi) => (
+        <React.Fragment key={group}>
+          {gi > 0 && <div className="w-6 h-px bg-[#2a2e39] my-0.5" />}
+          {tools.map(tool => {
+            const Icon = tool.icon;
+            const isActive = activeTool === tool.id;
+            return (
+              <button
+                key={tool.id}
+                onClick={() => setActiveTool(isActive ? "cursor" : tool.id)}
+                className={`w-[34px] h-[34px] flex items-center justify-center rounded transition-all group relative ${
+                  isActive
+                    ? "bg-[#2962ff]/20 text-[#2962ff]"
+                    : "text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d]"
+                }`}
+                title={tool.label}
+              >
+                <Icon className="w-[14px] h-[14px]" />
+              </button>
+            );
+          })}
+        </React.Fragment>
+      ))}
+
+      <div className="flex-1" />
+      <div className="w-6 h-px bg-[#2a2e39] my-0.5" />
+
+      <button onClick={onUndo} className="w-[34px] h-[34px] flex items-center justify-center rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all" title="تراجع">
+        <RotateCcw className="w-[14px] h-[14px]" />
+      </button>
+      <button onClick={onClearAll} className="w-[34px] h-[34px] flex items-center justify-center rounded text-[#787b86] hover:text-[#ef5350] hover:bg-[#ef5350]/10 transition-all" title="مسح الكل">
+        <Trash2 className="w-[14px] h-[14px]" />
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // INDICATOR MENU
 // ═══════════════════════════════════════════════════════════════
 function IndicatorMenu({ overlays, setOverlays, subs, setSubs, onClose }) {
@@ -260,44 +558,52 @@ function IndicatorMenu({ overlays, setOverlays, subs, setSubs, onClose }) {
   const toggleSub = (key) => setSubs(prev => ({ ...prev, [key]: { ...prev[key], enabled: !prev[key].enabled } }));
 
   const Toggle = ({ label, color, enabled, onToggle }) => (
-    <div className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-[#1a2540]/50 transition-colors">
+    <div className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-[#1e222d] transition-colors cursor-pointer" onClick={onToggle}>
       <div className="flex items-center gap-2">
-        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-        <span className="text-[11px] text-white">{label}</span>
+        <div className="w-3 h-[3px] rounded-full shrink-0" style={{ backgroundColor: color }} />
+        <span className="text-[11px] text-[#d1d4dc]">{label}</span>
       </div>
-      <button onClick={onToggle}
-        className={`w-8 h-4 rounded-full transition-all relative shrink-0 ${enabled ? "bg-[#d4a843]" : "bg-[#374151]"}`}>
-        <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all shadow ${enabled ? "right-0.5" : "left-0.5"}`} />
-      </button>
+      <div className={`w-8 h-[18px] rounded-full transition-all relative shrink-0 ${enabled ? "bg-[#2962ff]" : "bg-[#434651]"}`}>
+        <span className={`absolute top-[2px] w-[14px] h-[14px] bg-white rounded-full transition-all shadow-sm ${enabled ? "right-[2px]" : "left-[2px]"}`} />
+      </div>
     </div>
   );
 
   return (
-    <div className="absolute top-full right-0 mt-1 bg-[#0d1420] border border-[#1a2540] rounded-xl shadow-2xl z-40 w-64 backdrop-blur-xl">
-      <div className="p-2.5 border-b border-[#1a2540] flex items-center justify-between">
-        <span className="text-xs font-bold text-white">المؤشرات الفنية</span>
-        <button onClick={onClose} className="p-0.5 hover:bg-[#1a2540] rounded text-[#64748b]"><X className="w-3 h-3" /></button>
+    <div className="absolute top-full left-0 mt-1 bg-[#131722] border border-[#2a2e39] rounded-lg shadow-2xl z-40 w-72 backdrop-blur-xl overflow-hidden">
+      <div className="p-2.5 border-b border-[#2a2e39] flex items-center justify-between bg-[#1e222d]">
+        <span className="text-xs font-bold text-[#d1d4dc]">المؤشرات الفنية</span>
+        <button onClick={onClose} className="p-0.5 hover:bg-[#2a2e39] rounded text-[#787b86]"><X className="w-3.5 h-3.5" /></button>
       </div>
-      <div className="p-2">
-        <p className="text-[9px] text-[#64748b] font-bold mb-1 px-1 tracking-wider">المتوسطات والأشرطة</p>
+      <div className="p-2 space-y-0.5">
+        <p className="text-[9px] text-[#787b86] font-bold mb-1 px-2 tracking-wider uppercase">المتوسطات المتحركة</p>
+        <Toggle label={`EMA ${overlays.ema9.period}`} color={overlays.ema9.color} enabled={overlays.ema9.enabled} onToggle={() => toggleOverlay("ema9")} />
         <Toggle label={`EMA ${overlays.ema20.period}`} color={overlays.ema20.color} enabled={overlays.ema20.enabled} onToggle={() => toggleOverlay("ema20")} />
-        <Toggle label={`EMA ${overlays.ema50.period}`} color={overlays.ema50.color} enabled={overlays.ema50.enabled} onToggle={() => toggleOverlay("ema50")} />
+        <Toggle label={`SMA ${overlays.sma50.period}`} color={overlays.sma50.color} enabled={overlays.sma50.enabled} onToggle={() => toggleOverlay("sma50")} />
         <Toggle label={`SMA ${overlays.sma200.period}`} color={overlays.sma200.color} enabled={overlays.sma200.enabled} onToggle={() => toggleOverlay("sma200")} />
+      </div>
+      <div className="p-2 border-t border-[#2a2e39] space-y-0.5">
+        <p className="text-[9px] text-[#787b86] font-bold mb-1 px-2 tracking-wider uppercase">الأشرطة والمستويات</p>
         <Toggle label="Bollinger Bands" color={overlays.bb.color} enabled={overlays.bb.enabled} onToggle={() => toggleOverlay("bb")} />
         <Toggle label="VWAP" color={overlays.vwap.color} enabled={overlays.vwap.enabled} onToggle={() => toggleOverlay("vwap")} />
+        <Toggle label="Ichimoku" color={overlays.ichimoku.color} enabled={overlays.ichimoku.enabled} onToggle={() => toggleOverlay("ichimoku")} />
       </div>
-      <div className="p-2 border-t border-[#1a2540]">
-        <p className="text-[9px] text-[#64748b] font-bold mb-1 px-1 tracking-wider">المذبذبات (لوحات فرعية)</p>
-        <Toggle label={`RSI (${subs.rsi.period})`} color="#22d3ee" enabled={subs.rsi.enabled} onToggle={() => toggleSub("rsi")} />
-        <Toggle label={`MACD (${subs.macd.fast},${subs.macd.slow},${subs.macd.signal})`} color="#a78bfa" enabled={subs.macd.enabled} onToggle={() => toggleSub("macd")} />
-        <Toggle label={`Stochastic (${subs.stochastic.kPeriod},${subs.stochastic.dPeriod})`} color="#f472b6" enabled={subs.stochastic.enabled} onToggle={() => toggleSub("stochastic")} />
+      <div className="p-2 border-t border-[#2a2e39] space-y-0.5">
+        <p className="text-[9px] text-[#787b86] font-bold mb-1 px-2 tracking-wider uppercase">المذبذبات</p>
+        <Toggle label={`RSI (${subs.rsi.period})`} color="#7b2ff7" enabled={subs.rsi.enabled} onToggle={() => toggleSub("rsi")} />
+        <Toggle label={`MACD (${subs.macd.fast},${subs.macd.slow},${subs.macd.signal})`} color="#2962ff" enabled={subs.macd.enabled} onToggle={() => toggleSub("macd")} />
+        <Toggle label={`Stochastic (${subs.stochastic.kPeriod},${subs.stochastic.dPeriod})`} color="#e040fb" enabled={subs.stochastic.enabled} onToggle={() => toggleSub("stochastic")} />
+      </div>
+      <div className="p-2 border-t border-[#2a2e39] space-y-0.5">
+        <p className="text-[9px] text-[#787b86] font-bold mb-1 px-2 tracking-wider uppercase">الحجم</p>
+        <Toggle label="حجم التداول" color="#434651" enabled={overlays.volume.enabled} onToggle={() => toggleOverlay("volume")} />
       </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════
-// STOCK LIST
+// STOCK ROW
 // ═══════════════════════════════════════════════════════════════
 function StockRow({ stock, market, isActive, onSelect }) {
   const [quote, setQuote] = useState(null);
@@ -313,58 +619,193 @@ function StockRow({ stock, market, isActive, onSelect }) {
 
   return (
     <button onClick={() => onSelect(stock)}
-      className={`w-full flex items-center justify-between px-3 py-2 border-b border-[#060a11] text-right transition-all ${
-        isActive ? "bg-[#d4a843]/12 border-r-2 border-r-[#d4a843]" : "hover:bg-[#0d1420]"}`}>
+      className={`w-full flex items-center justify-between px-2.5 py-[7px] text-right transition-all ${
+        isActive ? "bg-[#2962ff]/12 border-r-2 border-r-[#2962ff]" : "hover:bg-[#1e222d] border-r-2 border-r-transparent"}`}>
       <div className="text-right flex-1 min-w-0">
-        <div className={`text-[11px] font-black ${isActive ? "text-[#d4a843]" : "text-white"}`}>{stock.symbol}</div>
-        <div className="text-[9px] text-[#475569] truncate">{stock.name}</div>
+        <div className={`text-[11px] font-bold ${isActive ? "text-[#2962ff]" : "text-[#d1d4dc]"}`}>{stock.symbol}</div>
+        <div className="text-[9px] text-[#787b86] truncate">{stock.name}</div>
       </div>
       <div className="text-left ml-1 shrink-0">
         {quote ? (
           <>
-            <div className="text-[11px] font-bold text-white">{quote.price?.toFixed(2)}</div>
-            <div className={`text-[9px] font-bold ${isUp ? "text-[#00c087]" : "text-[#ff4757]"}`}>
-              {isUp ? "▲" : "▼"} {Math.abs(change || 0).toFixed(2)}%
+            <div className="text-[11px] font-bold text-[#d1d4dc]">{quote.price?.toFixed(2)}</div>
+            <div className={`text-[9px] font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
+              {isUp ? "+" : ""}{(change || 0).toFixed(2)}%
             </div>
           </>
-        ) : <div className="w-8 h-3 bg-[#1a2540] rounded animate-pulse" />}
+        ) : <div className="w-10 h-5 bg-[#1e222d] rounded animate-pulse" />}
       </div>
     </button>
   );
 }
 
-function StockListPanel({ market, selectedSymbol, onSelect, search, setSearch }) {
-  const sectors = market === "saudi" ? SAUDI_SECTORS : [{ sector: "الأسهم الأمريكية", items: US_STOCKS }];
+// ═══════════════════════════════════════════════════════════════
+// RIGHT SIDEBAR (Watchlist + Stock Details)
+// ═══════════════════════════════════════════════════════════════
+function RightSidebar({ market, selectedStock, onSelect, quote, candles, search, setSearch, handleSelectMarket }) {
+  const [tab, setTab] = useState("watchlist");
   const [expanded, setExpanded] = useState(null);
+
+  const sectors = market === "saudi" ? SAUDI_SECTORS : [{ sector: "الأسهم الأمريكية", items: US_STOCKS }];
   const allItems = sectors.flatMap(s => s.items);
   const filtered = search ? allItems.filter(s => s.symbol.toLowerCase().includes(search.toLowerCase()) || s.name.includes(search)) : null;
 
+  const change = quote?.change_percent;
+  const isUp = change >= 0;
+
+  const stats = useMemo(() => {
+    if (!candles?.length) return null;
+    const last = candles[candles.length - 1];
+    const allHighs = candles.map(c => c.high);
+    const allLows = candles.map(c => c.low);
+    const volumes = candles.map(c => c.volume || 0);
+    const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+    const high52 = Math.max(...allHighs);
+    const low52 = Math.min(...allLows);
+    return { dayHigh: last.high, dayLow: last.low, high52, low52, avgVol, open: last.open };
+  }, [candles]);
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="px-2 py-2 border-b border-[#1a2540]">
-        <div className="relative">
-          <Search className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#475569]" />
-          <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="بحث رمز أو اسم..."
-            className="w-full bg-[#060a11] border border-[#1a2540] rounded-lg pr-7 pl-2 py-1.5 text-[11px] text-white placeholder-[#374151] outline-none focus:border-[#d4a843]/50 transition-colors" />
-        </div>
+    <div className="w-[280px] shrink-0 bg-[#131722] border-l border-[#2a2e39] flex flex-col overflow-hidden">
+      {/* Market tabs */}
+      <div className="flex border-b border-[#2a2e39] shrink-0">
+        <button onClick={() => handleSelectMarket("saudi")}
+          className={`flex-1 py-2 text-[10px] font-bold transition-all ${market === "saudi" ? "text-[#2962ff] border-b-2 border-b-[#2962ff] bg-[#2962ff]/5" : "text-[#787b86] hover:text-[#d1d4dc]"}`}>
+          🇸🇦 السعودي
+        </button>
+        <button onClick={() => handleSelectMarket("us")}
+          className={`flex-1 py-2 text-[10px] font-bold transition-all ${market === "us" ? "text-[#2962ff] border-b-2 border-b-[#2962ff] bg-[#2962ff]/5" : "text-[#787b86] hover:text-[#d1d4dc]"}`}>
+          🇺🇸 الأمريكي
+        </button>
       </div>
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {filtered ? filtered.map(s => (
-          <StockRow key={s.symbol} stock={s} market={market} isActive={selectedSymbol === s.symbol} onSelect={onSelect} />
-        )) : sectors.map(sec => (
-          <div key={sec.sector}>
-            <button onClick={() => setExpanded(expanded === sec.sector ? null : sec.sector)}
-              className="w-full flex items-center justify-between px-3 py-1.5 bg-[#0a0f18] border-b border-[#060a11] text-[10px] font-bold text-[#475569] hover:text-[#d4a843] transition-colors">
-              <span>{sec.sector}</span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${expanded === sec.sector ? "rotate-180" : ""}`} />
-            </button>
-            {(expanded === sec.sector || expanded === null) && sec.items.map(s => (
-              <StockRow key={s.symbol + sec.sector} stock={s} market={market} isActive={selectedSymbol === s.symbol} onSelect={onSelect} />
+
+      {/* Tabs */}
+      <div className="flex border-b border-[#2a2e39] shrink-0">
+        <button onClick={() => setTab("watchlist")}
+          className={`flex-1 py-1.5 text-[10px] font-bold transition-all ${tab === "watchlist" ? "text-[#d1d4dc] border-b border-b-[#d1d4dc]" : "text-[#787b86]"}`}>
+          متابعة
+        </button>
+        <button onClick={() => setTab("details")}
+          className={`flex-1 py-1.5 text-[10px] font-bold transition-all ${tab === "details" ? "text-[#d1d4dc] border-b border-b-[#d1d4dc]" : "text-[#787b86]"}`}>
+          تفاصيل
+        </button>
+      </div>
+
+      {tab === "watchlist" ? (
+        <>
+          <div className="flex items-center justify-between px-2 py-1 border-b border-[#2a2e39] bg-[#1e222d]/50 text-[9px] text-[#787b86] shrink-0">
+            <span>التغيير %</span>
+            <span>آخر سعر</span>
+            <span>الرمز</span>
+          </div>
+          <div className="px-2 py-1.5 border-b border-[#2a2e39] shrink-0">
+            <div className="relative">
+              <Search className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-[#787b86]" />
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="بحث..."
+                className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded pr-7 pl-2 py-1 text-[11px] text-[#d1d4dc] placeholder-[#434651] outline-none focus:border-[#2962ff]/50 transition-colors" dir="rtl" />
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            {filtered ? filtered.map(s => (
+              <StockRow key={s.symbol} stock={s} market={market} isActive={selectedStock?.symbol === s.symbol} onSelect={onSelect} />
+            )) : sectors.map(sec => (
+              <div key={sec.sector}>
+                <button onClick={() => setExpanded(expanded === sec.sector ? null : sec.sector)}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 bg-[#1e222d]/50 border-b border-[#2a2e39] text-[10px] font-bold text-[#787b86] hover:text-[#d1d4dc] transition-colors">
+                  <ChevronDown className={`w-3 h-3 transition-transform ${expanded === sec.sector ? "rotate-180" : ""}`} />
+                  <span>{sec.sector}</span>
+                </button>
+                {(expanded === sec.sector || expanded === null) && sec.items.map(s => (
+                  <StockRow key={s.symbol + sec.sector} stock={s} market={market} isActive={selectedStock?.symbol === s.symbol} onSelect={onSelect} />
+                ))}
+              </div>
             ))}
           </div>
-        ))}
-      </div>
+        </>
+      ) : (
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3" dir="rtl">
+          {/* Stock header */}
+          <div className="text-center space-y-1">
+            <div className="flex items-center justify-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-[#2962ff]/15 flex items-center justify-center text-[#2962ff] text-xs font-black">
+                {selectedStock?.symbol?.substring(0, 2)}
+              </div>
+              <div>
+                <div className="text-sm font-black text-[#d1d4dc]">{selectedStock?.symbol}</div>
+                <div className="text-[10px] text-[#787b86]">{selectedStock?.name}</div>
+              </div>
+            </div>
+            {quote && (
+              <div className="space-y-0.5">
+                <div className="text-2xl font-black text-[#d1d4dc]">{quote.price?.toFixed(2)} <span className="text-xs text-[#787b86]">{quote.currency || (market === "saudi" ? "SAR" : "USD")}</span></div>
+                <div className={`text-sm font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
+                  {isUp ? "+" : ""}{quote.change?.toFixed(2)} ({isUp ? "+" : ""}{(change || 0).toFixed(2)}%)
+                </div>
+                <div className="flex items-center justify-center gap-1 text-[10px] text-[#26a69a]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#26a69a] animate-pulse" />
+                  السوق مفتوح
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Range bars */}
+          {stats && (
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-[#787b86]">{stats.dayLow?.toFixed(2)}</span>
+                  <span className="text-[9px] text-[#787b86]">نطاق اليوم</span>
+                  <span className="text-[#787b86]">{stats.dayHigh?.toFixed(2)}</span>
+                </div>
+                <div className="h-[4px] bg-[#2a2e39] rounded-full relative overflow-hidden">
+                  {quote && stats.dayHigh !== stats.dayLow && (
+                    <div className="absolute top-0 h-full w-full rounded-full" style={{ background: "linear-gradient(90deg, #ef5350, #d4a843, #26a69a)" }}>
+                      <div className="absolute top-1/2 w-2 h-2 rounded-full bg-white shadow border border-[#2a2e39]"
+                        style={{ left: `${Math.max(0, Math.min(100, ((quote.price - stats.dayLow) / (stats.dayHigh - stats.dayLow)) * 100))}%`, transform: "translate(-50%, -50%)" }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-[#787b86]">{stats.low52?.toFixed(2)}</span>
+                  <span className="text-[9px] text-[#787b86]">نطاق 52 أسبوع</span>
+                  <span className="text-[#787b86]">{stats.high52?.toFixed(2)}</span>
+                </div>
+                <div className="h-[4px] bg-[#2a2e39] rounded-full relative overflow-hidden">
+                  {quote && stats.high52 !== stats.low52 && (
+                    <div className="absolute top-0 h-full w-full rounded-full" style={{ background: "linear-gradient(90deg, #ef5350, #d4a843, #26a69a)" }}>
+                      <div className="absolute top-1/2 w-2 h-2 rounded-full bg-white shadow border border-[#2a2e39]"
+                        style={{ left: `${Math.max(0, Math.min(100, ((quote.price - stats.low52) / (stats.high52 - stats.low52)) * 100))}%`, transform: "translate(-50%, -50%)" }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Key stats */}
+          <div className="space-y-0">
+            <div className="text-[10px] font-bold text-[#d1d4dc] mb-1.5">الإحصائيات الرئيسية</div>
+            {[
+              { label: "حجم التداول", value: quote?.volume ? formatVol(quote.volume) : "-" },
+              { label: "متوسط الحجم (30 يوم)", value: stats?.avgVol ? formatVol(stats.avgVol) : "-" },
+              { label: "الافتتاح", value: stats?.open?.toFixed(2) || "-" },
+              { label: "أعلى سعر", value: stats?.dayHigh?.toFixed(2) || "-" },
+              { label: "أدنى سعر", value: stats?.dayLow?.toFixed(2) || "-" },
+              { label: "أعلى 52 أسبوع", value: stats?.high52?.toFixed(2) || "-" },
+              { label: "أدنى 52 أسبوع", value: stats?.low52?.toFixed(2) || "-" },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center justify-between py-1.5 border-b border-[#2a2e39]/50">
+                <span className="text-[10px] text-[#787b86]">{item.label}</span>
+                <span className="text-[11px] font-bold text-[#d1d4dc]">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -385,17 +826,34 @@ export default function ChartBoard() {
   const [loading, setLoading] = useState(false);
   const [currentBar, setCurrentBar] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [activeTool, setActiveTool] = useState("cursor");
+  const [drawings, setDrawings] = useState([]);
+  const [showChartTypeMenu, setShowChartTypeMenu] = useState(false);
+  const [showIbkr, setShowIbkr] = useState(false);
+  const [ibkrState, setIbkrState] = useState({
+    connected: false,
+    authenticated: false,
+    useIbkr: false,
+    accounts: [],
+    selectedAccount: null,
+    conidCache: {}, // symbol -> conid mapping
+  });
+  const ibkrStreamRef = useRef(null);
 
-  // Overlay indicators (rendered on main chart)
+  // Overlays
   const [overlays, setOverlays] = useState({
+    ema9: { enabled: false, period: 9, color: "#26a69a" },
     ema20: { enabled: true, period: 20, color: "#f59e0b" },
-    ema50: { enabled: true, period: 50, color: "#818cf8" },
-    sma200: { enabled: false, period: 200, color: "#fb923c" },
-    bb: { enabled: false, period: 20, multiplier: 2, color: "#a78bfa" },
-    vwap: { enabled: false, color: "#22d3ee" },
+    sma50: { enabled: true, period: 50, color: "#2962ff" },
+    sma200: { enabled: false, period: 200, color: "#ff9800" },
+    bb: { enabled: false, period: 20, multiplier: 2, color: "#9c27b0" },
+    vwap: { enabled: false, color: "#00bcd4" },
+    ichimoku: { enabled: false, color: "#7b2ff7" },
+    volume: { enabled: true },
   });
 
-  // Sub-panel oscillators
+  // Sub-panels
   const [subs, setSubs] = useState({
     rsi: { enabled: false, period: 14 },
     macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
@@ -405,6 +863,7 @@ export default function ChartBoard() {
   // Chart refs
   const mainContainerRef = useRef(null);
   const mainChartRef = useRef(null);
+  const mainSeriesRef = useRef(null);
   const rsiContainerRef = useRef(null);
   const rsiChartRef = useRef(null);
   const macdContainerRef = useRef(null);
@@ -412,28 +871,187 @@ export default function ChartBoard() {
   const stochContainerRef = useRef(null);
   const stochChartRef = useRef(null);
 
-  const selectedTf = useMemo(() => TIMEFRAMES.find(t => t.value === timeframe) || TIMEFRAMES[4], [timeframe]);
+  const selectedTf = useMemo(() => TIMEFRAMES.find(t => t.value === timeframe) || TIMEFRAMES[5], [timeframe]);
 
-  // ── Fetch Quote ──
+  // ── Init IBKR from saved config ──
+  useEffect(() => {
+    const saved = ibkrConfig.getConfig();
+    if (saved?.connected) {
+      checkAuthStatus()
+        .then(status => {
+          if (status.authenticated || status.connected) {
+            setIbkrState(prev => ({ ...prev, connected: true, authenticated: true, useIbkr: true }));
+            getAccounts().then(accts => {
+              const list = Array.isArray(accts) ? accts : [];
+              if (list.length > 0) {
+                setIbkrState(prev => ({
+                  ...prev,
+                  accounts: list,
+                  selectedAccount: list[0]?.accountId || list[0]?.id,
+                }));
+              }
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // ── IBKR session keep-alive ──
+  useEffect(() => {
+    if (!ibkrState.connected) return;
+    const iv = setInterval(() => {
+      tickle().catch(() => {
+        setIbkrState(prev => ({ ...prev, connected: false, authenticated: false }));
+      });
+    }, 55000); // tickle every 55s to keep session alive
+    return () => clearInterval(iv);
+  }, [ibkrState.connected]);
+
+  // ── Resolve symbol to IBKR conid ──
+  const resolveConid = useCallback(async (symbol) => {
+    if (ibkrState.conidCache[symbol]) return ibkrState.conidCache[symbol];
+    try {
+      const results = await searchContract(symbol);
+      const contracts = Array.isArray(results) ? results : [];
+      if (contracts.length === 0) return null;
+      // Pick STK (stock) contract, prefer US exchanges
+      const stk = contracts.find(c => c.sections?.some(s => s.secType === 'STK')) || contracts[0];
+      const conid = stk.conid || stk.sections?.[0]?.conid;
+      if (conid) {
+        setIbkrState(prev => ({
+          ...prev,
+          conidCache: { ...prev.conidCache, [symbol]: conid },
+        }));
+      }
+      return conid;
+    } catch (err) {
+      console.error('[IBKR] Contract search error:', err);
+      return null;
+    }
+  }, [ibkrState.conidCache]);
+
+  // ── Fetch Quote (IBKR or Yahoo) ──
   useEffect(() => {
     if (!selectedStock) return;
     setQuote(null);
-    const fetchQuote = () => getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
-    fetchQuote();
-    const iv = setInterval(fetchQuote, 5000);
-    return () => clearInterval(iv);
-  }, [selectedStock, market]);
 
-  // ── Fetch Candles ──
+    if (ibkrState.connected && ibkrState.useIbkr) {
+      // IBKR real-time quote
+      let cancelled = false;
+      const fetchIbkrQuote = async () => {
+        const conid = await resolveConid(selectedStock.symbol);
+        if (!conid || cancelled) return;
+        try {
+          const snapshots = await getMarketSnapshot(conid);
+          const snap = Array.isArray(snapshots) ? snapshots[0] : snapshots;
+          if (!cancelled && snap) setQuote(parseSnapshotToQuote(snap));
+        } catch (err) {
+          console.error('[IBKR] Snapshot error:', err);
+        }
+      };
+      fetchIbkrQuote();
+      const iv = setInterval(fetchIbkrQuote, 3000); // faster polling for IBKR
+      return () => { cancelled = true; clearInterval(iv); };
+    } else {
+      // Standard Yahoo quote
+      const fetchQ = () => getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
+      fetchQ();
+      const iv = setInterval(fetchQ, 5000);
+      return () => clearInterval(iv);
+    }
+  }, [selectedStock, market, ibkrState.connected, ibkrState.useIbkr]);
+
+  // ── IBKR WebSocket streaming ──
+  useEffect(() => {
+    if (!ibkrState.connected || !ibkrState.useIbkr || !selectedStock) return;
+
+    let conid = null;
+    let stream = null;
+
+    const setupStream = async () => {
+      conid = await resolveConid(selectedStock.symbol);
+      if (!conid) return;
+
+      stream = createMarketDataStream(
+        (data) => {
+          if (data.conid === conid || data.conidEx === String(conid)) {
+            const update = parseStreamUpdate(data);
+            if (update && update.price) {
+              setQuote(prev => prev ? { ...prev, ...Object.fromEntries(
+                Object.entries(update).filter(([, v]) => v != null)
+              )} : update);
+            }
+          }
+        },
+        (err) => console.error('[IBKR WS] Stream error:', err)
+      );
+
+      // Subscribe once connected
+      stream.ws.addEventListener('open', () => {
+        stream.subscribe(conid);
+      });
+
+      ibkrStreamRef.current = stream;
+    };
+
+    setupStream();
+
+    return () => {
+      if (stream) {
+        if (conid) stream.unsubscribe(conid);
+        stream.close();
+      }
+      ibkrStreamRef.current = null;
+    };
+  }, [selectedStock, ibkrState.connected, ibkrState.useIbkr]);
+
+  // ── Fetch Candles (IBKR or Yahoo) ──
   useEffect(() => {
     if (!selectedStock) return;
     fetchCandles();
-    const iv = setInterval(fetchCandles, 10000);
+    const iv = setInterval(fetchCandles, ibkrState.useIbkr ? 15000 : 10000);
     return () => clearInterval(iv);
-  }, [selectedStock, market, timeframe]);
+  }, [selectedStock, market, timeframe, ibkrState.connected, ibkrState.useIbkr]);
 
   const fetchCandles = async () => {
     setLoading(true);
+
+    // ── IBKR candles ──
+    if (ibkrState.connected && ibkrState.useIbkr) {
+      try {
+        const conid = await resolveConid(selectedStock.symbol);
+        if (!conid) { setLoading(false); return; }
+        const historyResponse = await getHistoricalData(conid, selectedTf.interval);
+        const ibkrCandles = parseHistoryToCandles(historyResponse);
+
+        if (ibkrCandles.length > 0) {
+          // Normalize times
+          const isIntraday = ["1min", "5min", "15min", "30min", "60min"].includes(selectedTf.interval);
+          const normalized = ibkrCandles.map(c => {
+            let t = c.time;
+            if (!isIntraday && typeof t === 'number') {
+              t = new Date(t * 1000).toISOString().substring(0, 10);
+            }
+            return { ...c, time: t };
+          });
+          const seen = new Set();
+          const processed = normalized
+            .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
+            .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
+          if (processed.length > 0) {
+            setCandles(processed);
+            setCurrentBar(processed[processed.length - 1]);
+          }
+        }
+      } catch (err) {
+        console.error('[IBKR] History error:', err);
+      }
+      setLoading(false);
+      return;
+    }
+
+    // ── Standard Yahoo candles ──
     try {
       const response = await base44.functions.invoke("marketData", {
         action: "candles",
@@ -471,7 +1089,31 @@ export default function ChartBoard() {
     setLoading(false);
   };
 
-  // ── Build All Charts ──
+  // ── Ichimoku ──
+  const calcIchimoku = useCallback((data) => {
+    const tenkan = [], kijun = [], senkouA = [], senkouB = [], chikou = [];
+    const calcHL = (arr, period, i) => {
+      const slice = arr.slice(Math.max(0, i - period + 1), i + 1);
+      return { high: Math.max(...slice.map(c => c.high)), low: Math.min(...slice.map(c => c.low)) };
+    };
+    for (let i = 0; i < data.length; i++) {
+      const t9 = calcHL(data, 9, i);
+      const t26 = calcHL(data, 26, i);
+      const t52 = calcHL(data, 52, i);
+      tenkan.push({ time: data[i].time, value: (t9.high + t9.low) / 2 });
+      kijun.push({ time: data[i].time, value: (t26.high + t26.low) / 2 });
+      if (i + 26 < data.length) {
+        senkouA.push({ time: data[i + 26].time, value: ((t9.high + t9.low) / 2 + (t26.high + t26.low) / 2) / 2 });
+        senkouB.push({ time: data[i + 26].time, value: (t52.high + t52.low) / 2 });
+      }
+      if (i >= 26) {
+        chikou.push({ time: data[i - 26].time, value: data[i].close });
+      }
+    }
+    return { tenkan, kijun, senkouA, senkouB, chikou };
+  }, []);
+
+  // ── Build Charts ──
   useEffect(() => {
     if (!candles || candles.length === 0) return;
     const cleanups = [];
@@ -486,11 +1128,9 @@ export default function ChartBoard() {
         height: mainContainer.clientHeight,
       });
 
-      // Determine data
       let displayData = candles;
       if (chartType === "heikinashi") displayData = toHeikinAshi(candles);
 
-      // Main series
       let mainSeries;
       if (chartType === "candlestick" || chartType === "heikinashi") {
         mainSeries = chart.addCandlestickSeries({
@@ -500,11 +1140,11 @@ export default function ChartBoard() {
         });
         mainSeries.setData(displayData);
       } else if (chartType === "line") {
-        mainSeries = chart.addLineSeries({ color: C.gold, lineWidth: 2 });
+        mainSeries = chart.addLineSeries({ color: C.blue, lineWidth: 2 });
         mainSeries.setData(displayData.map(c => ({ time: c.time, value: c.close })));
       } else if (chartType === "area") {
         mainSeries = chart.addAreaSeries({
-          lineColor: C.gold, topColor: "rgba(212,168,67,0.3)", bottomColor: "rgba(212,168,67,0)",
+          lineColor: C.blue, topColor: "rgba(41,98,255,0.28)", bottomColor: "rgba(41,98,255,0.02)",
           lineWidth: 2,
         });
         mainSeries.setData(displayData.map(c => ({ time: c.time, value: c.close })));
@@ -512,40 +1152,54 @@ export default function ChartBoard() {
         mainSeries = chart.addBarSeries({ upColor: C.up, downColor: C.down });
         mainSeries.setData(displayData);
       }
+      mainSeriesRef.current = mainSeries;
 
-      // Volume overlay (bottom 18% of main chart)
-      const volSeries = chart.addHistogramSeries({
-        priceFormat: { type: "volume" },
-        priceScaleId: "volume",
-        lastValueVisible: false,
-        priceLineVisible: false,
-      });
-      chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-      volSeries.setData(candles.map(c => ({
-        time: c.time, value: c.volume || 0,
-        color: c.close >= c.open ? "rgba(0,192,135,0.2)" : "rgba(255,71,87,0.2)",
-      })));
+      // Volume
+      if (overlays.volume.enabled) {
+        const volSeries = chart.addHistogramSeries({
+          priceFormat: { type: "volume" },
+          priceScaleId: "volume",
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+        volSeries.setData(candles.map(c => ({
+          time: c.time, value: c.volume || 0,
+          color: c.close >= c.open ? "rgba(38,166,154,0.25)" : "rgba(239,83,80,0.25)",
+        })));
+      }
 
-      // Overlay indicators
-      const lineOpts = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false };
+      // Overlays
+      const lineOpts = { lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false };
 
+      if (overlays.ema9.enabled) {
+        chart.addLineSeries({ ...lineOpts, color: overlays.ema9.color }).setData(calcEMA(candles, overlays.ema9.period));
+      }
       if (overlays.ema20.enabled) {
         chart.addLineSeries({ ...lineOpts, color: overlays.ema20.color }).setData(calcEMA(candles, overlays.ema20.period));
       }
-      if (overlays.ema50.enabled) {
-        chart.addLineSeries({ ...lineOpts, color: overlays.ema50.color }).setData(calcEMA(candles, overlays.ema50.period));
+      if (overlays.sma50.enabled) {
+        chart.addLineSeries({ ...lineOpts, color: overlays.sma50.color }).setData(calcSMA(candles, overlays.sma50.period));
       }
       if (overlays.sma200.enabled) {
         chart.addLineSeries({ ...lineOpts, color: overlays.sma200.color }).setData(calcSMA(candles, overlays.sma200.period));
       }
       if (overlays.bb.enabled) {
         const bb = calcBollingerBands(candles, overlays.bb.period, overlays.bb.multiplier);
-        chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: 2 }).setData(bb.upper);
-        chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: 1 }).setData(bb.middle);
-        chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: 2 }).setData(bb.lower);
+        chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: LineStyle.Dashed, lineWidth: 1 }).setData(bb.upper);
+        chart.addLineSeries({ ...lineOpts, color: overlays.bb.color }).setData(bb.middle);
+        chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: LineStyle.Dashed, lineWidth: 1 }).setData(bb.lower);
       }
       if (overlays.vwap.enabled) {
-        chart.addLineSeries({ ...lineOpts, color: overlays.vwap.color, lineWidth: 1.5, lineStyle: 4 }).setData(calcVWAP(candles));
+        chart.addLineSeries({ ...lineOpts, color: overlays.vwap.color, lineWidth: 2, lineStyle: LineStyle.Dotted }).setData(calcVWAP(candles));
+      }
+      if (overlays.ichimoku.enabled) {
+        const ichi = calcIchimoku(candles);
+        chart.addLineSeries({ ...lineOpts, color: "#0095ff", lineWidth: 1 }).setData(ichi.tenkan);
+        chart.addLineSeries({ ...lineOpts, color: "#ff0000", lineWidth: 1 }).setData(ichi.kijun);
+        if (ichi.senkouA.length > 0) chart.addLineSeries({ ...lineOpts, color: "#00c853", lineWidth: 1 }).setData(ichi.senkouA);
+        if (ichi.senkouB.length > 0) chart.addLineSeries({ ...lineOpts, color: "#ff5252", lineWidth: 1 }).setData(ichi.senkouB);
+        if (ichi.chikou.length > 0) chart.addLineSeries({ ...lineOpts, color: "#7b2ff7", lineWidth: 1, lineStyle: LineStyle.Dotted }).setData(ichi.chikou);
       }
 
       // Crosshair tracking
@@ -559,7 +1213,7 @@ export default function ChartBoard() {
       chart.timeScale().fitContent();
       mainChartRef.current = chart;
 
-      // Sync sub-charts on scroll
+      // Sync sub-charts
       chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
         if (!range) return;
         [rsiChartRef, macdChartRef, stochChartRef].forEach(ref => {
@@ -567,7 +1221,6 @@ export default function ChartBoard() {
         });
       });
 
-      // Resize observer
       const ro = new ResizeObserver(() => {
         if (mainContainer && mainChartRef.current) {
           mainChartRef.current.applyOptions({ width: mainContainer.clientWidth, height: mainContainer.clientHeight });
@@ -580,69 +1233,75 @@ export default function ChartBoard() {
       cleanups.push(() => ro.disconnect());
     }
 
-    // === RSI SUB-CHART ===
+    // === RSI ===
     if (subs.rsi.enabled && rsiContainerRef.current) {
       if (rsiChartRef.current) { try { rsiChartRef.current.remove(); } catch (_) {} }
       const container = rsiContainerRef.current;
       const chart = createChart(container, {
-        ...chartOpts(container),
-        height: 90,
+        layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10 },
+        grid: { vertLines: { color: "#1e222d30" }, horzLines: { color: "#1e222d30" } },
+        width: container.clientWidth, height: 100,
         timeScale: { visible: false, borderColor: C.border },
-        rightPriceScale: { borderColor: C.border, textColor: C.dim, scaleMargins: { top: 0.08, bottom: 0.08 } },
+        rightPriceScale: { borderColor: C.border, textColor: C.dim, scaleMargins: { top: 0.1, bottom: 0.1 } },
+        crosshair: { mode: CrosshairMode.Normal },
       });
       const rsiData = calcRSI(candles, subs.rsi.period);
-      const series = chart.addLineSeries({ color: "#22d3ee", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
+      const series = chart.addLineSeries({ color: "#7b2ff7", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
       series.setData(rsiData);
-      series.createPriceLine({ price: 70, color: "#ff475780", lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
-      series.createPriceLine({ price: 30, color: "#00c08780", lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
-      series.createPriceLine({ price: 50, color: "#47556950", lineWidth: 1, lineStyle: 1, axisLabelVisible: false });
+      series.createPriceLine({ price: 70, color: "rgba(239,83,80,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "" });
+      series.createPriceLine({ price: 30, color: "rgba(38,166,154,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "" });
+      series.createPriceLine({ price: 50, color: "rgba(120,123,134,0.2)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false });
       chart.timeScale().fitContent();
       rsiChartRef.current = chart;
     } else {
       if (rsiChartRef.current) { try { rsiChartRef.current.remove(); } catch (_) {} rsiChartRef.current = null; }
     }
 
-    // === MACD SUB-CHART ===
+    // === MACD ===
     if (subs.macd.enabled && macdContainerRef.current) {
       if (macdChartRef.current) { try { macdChartRef.current.remove(); } catch (_) {} }
       const container = macdContainerRef.current;
       const chart = createChart(container, {
-        ...chartOpts(container),
-        height: 100,
+        layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10 },
+        grid: { vertLines: { color: "#1e222d30" }, horzLines: { color: "#1e222d30" } },
+        width: container.clientWidth, height: 110,
         timeScale: { visible: false, borderColor: C.border },
-        rightPriceScale: { borderColor: C.border, textColor: C.dim, scaleMargins: { top: 0.08, bottom: 0.08 } },
+        rightPriceScale: { borderColor: C.border, textColor: C.dim, scaleMargins: { top: 0.1, bottom: 0.1 } },
+        crosshair: { mode: CrosshairMode.Normal },
       });
       const { macdLine, signalLine, histogram } = calcMACD(candles, subs.macd.fast, subs.macd.slow, subs.macd.signal);
-      const histSeries = chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false, priceScaleId: "macd" });
-      histSeries.setData(histogram.map(d => ({
-        time: d.time, value: d.value,
-        color: d.value >= 0 ? "rgba(0,192,135,0.5)" : "rgba(255,71,87,0.5)",
-      })));
-      chart.addLineSeries({ color: "#3b82f6", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, priceScaleId: "macd" }).setData(macdLine);
-      chart.addLineSeries({ color: "#f97316", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceScaleId: "macd" }).setData(signalLine);
+      chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false, priceScaleId: "macd" })
+        .setData(histogram.map(d => ({
+          time: d.time, value: d.value,
+          color: d.value >= 0 ? "rgba(38,166,154,0.6)" : "rgba(239,83,80,0.6)",
+        })));
+      chart.addLineSeries({ color: "#2962ff", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, priceScaleId: "macd" }).setData(macdLine);
+      chart.addLineSeries({ color: "#ff9800", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceScaleId: "macd" }).setData(signalLine);
       chart.timeScale().fitContent();
       macdChartRef.current = chart;
     } else {
       if (macdChartRef.current) { try { macdChartRef.current.remove(); } catch (_) {} macdChartRef.current = null; }
     }
 
-    // === STOCHASTIC SUB-CHART ===
+    // === STOCHASTIC ===
     if (subs.stochastic.enabled && stochContainerRef.current) {
       if (stochChartRef.current) { try { stochChartRef.current.remove(); } catch (_) {} }
       const container = stochContainerRef.current;
       const chart = createChart(container, {
-        ...chartOpts(container),
-        height: 90,
+        layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10 },
+        grid: { vertLines: { color: "#1e222d30" }, horzLines: { color: "#1e222d30" } },
+        width: container.clientWidth, height: 100,
         timeScale: { visible: false, borderColor: C.border },
-        rightPriceScale: { borderColor: C.border, textColor: C.dim, scaleMargins: { top: 0.08, bottom: 0.08 } },
+        rightPriceScale: { borderColor: C.border, textColor: C.dim, scaleMargins: { top: 0.1, bottom: 0.1 } },
+        crosshair: { mode: CrosshairMode.Normal },
       });
       const stochData = calcStochastic(candles, subs.stochastic.kPeriod, subs.stochastic.dPeriod);
-      const kSeries = chart.addLineSeries({ color: "#f472b6", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
+      const kSeries = chart.addLineSeries({ color: "#2962ff", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
       kSeries.setData(stochData.map(d => ({ time: d.time, value: d.k })));
-      chart.addLineSeries({ color: "#818cf8", lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      chart.addLineSeries({ color: "#e040fb", lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
         .setData(stochData.map(d => ({ time: d.time, value: d.d })));
-      kSeries.createPriceLine({ price: 80, color: "#ff475780", lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
-      kSeries.createPriceLine({ price: 20, color: "#00c08780", lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
+      kSeries.createPriceLine({ price: 80, color: "rgba(239,83,80,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
+      kSeries.createPriceLine({ price: 20, color: "rgba(38,166,154,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
       chart.timeScale().fitContent();
       stochChartRef.current = chart;
     } else {
@@ -665,6 +1324,12 @@ export default function ChartBoard() {
     setCurrentBar(null);
   };
 
+  const handleSelectMarket = (m) => {
+    setMarket(m);
+    if (m === "saudi") handleSelect({ symbol: "2222", name: "أرامكو" });
+    else handleSelect({ symbol: "AAPL", name: "Apple" });
+  };
+
   const change = quote?.change_percent;
   const isUp = change >= 0;
   const activeCount = Object.values(overlays).filter(i => i.enabled).length + Object.values(subs).filter(i => i.enabled).length;
@@ -679,187 +1344,260 @@ export default function ChartBoard() {
     }
   };
 
+  // Active overlay labels
+  const overlayLabels = [];
+  if (overlays.ema9.enabled) overlayLabels.push({ label: `EMA ${overlays.ema9.period}`, color: overlays.ema9.color });
+  if (overlays.ema20.enabled) overlayLabels.push({ label: `EMA ${overlays.ema20.period}`, color: overlays.ema20.color });
+  if (overlays.sma50.enabled) overlayLabels.push({ label: `SMA ${overlays.sma50.period}`, color: overlays.sma50.color });
+  if (overlays.sma200.enabled) overlayLabels.push({ label: `SMA ${overlays.sma200.period}`, color: overlays.sma200.color });
+  if (overlays.bb.enabled) overlayLabels.push({ label: "BB", color: overlays.bb.color });
+  if (overlays.vwap.enabled) overlayLabels.push({ label: "VWAP", color: overlays.vwap.color });
+  if (overlays.ichimoku.enabled) overlayLabels.push({ label: "Ichimoku", color: overlays.ichimoku.color });
+
   // ═══════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="flex h-screen overflow-hidden bg-[#060a11] -m-4 md:-m-6 lg:-m-8 relative">
+    <div className="flex h-screen overflow-hidden bg-[#0c0e14] -m-4 md:-m-6 lg:-m-8 relative select-none" dir="ltr">
 
-      {/* ── RIGHT SIDEBAR: Stocks ── */}
-      <div className="w-48 shrink-0 bg-[#0d1420] border-l border-[#1a2540] flex flex-col overflow-hidden">
-        <div className="flex border-b border-[#1a2540]">
-          <button onClick={() => { setMarket("saudi"); handleSelect({ symbol: "TASI", name: "تاسي" }); }}
-            className={`flex-1 py-2.5 text-[10px] font-bold transition-all ${market === "saudi" ? "bg-[#d4a843]/12 text-[#d4a843] border-b-2 border-b-[#d4a843]" : "text-[#475569] hover:text-white"}`}>
-            🇸🇦 السعودي
-          </button>
-          <button onClick={() => { setMarket("us"); handleSelect({ symbol: "AAPL", name: "Apple" }); }}
-            className={`flex-1 py-2.5 text-[10px] font-bold transition-all ${market === "us" ? "bg-[#d4a843]/12 text-[#d4a843] border-b-2 border-b-[#d4a843]" : "text-[#475569] hover:text-white"}`}>
-            🇺🇸 الأمريكي
-          </button>
-        </div>
-        <StockListPanel market={market} selectedSymbol={selectedStock?.symbol} onSelect={handleSelect} search={search} setSearch={setSearch} />
-      </div>
+      {/* ── LEFT: Drawing Tools ── */}
+      <DrawingToolbar
+        activeTool={activeTool}
+        setActiveTool={setActiveTool}
+        onClearAll={() => setDrawings([])}
+        onUndo={() => setDrawings(prev => prev.slice(0, -1))}
+      />
 
       {/* ── CENTER ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* ── TOOLBAR ── */}
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[#1a2540] bg-[#0a0f18] shrink-0 flex-wrap">
-          {/* Symbol info */}
-          <div className="flex items-center gap-2 mr-2">
-            <span className="text-base font-black text-white tracking-wide">{selectedStock?.symbol}</span>
-            <span className="text-[11px] text-[#475569]">{selectedStock?.name}</span>
-            {quote && (
-              <>
-                <span className="text-sm font-bold text-white ml-1">{quote.price?.toFixed(2)}</span>
-                <span className={`text-xs font-bold flex items-center gap-0.5 px-1.5 py-0.5 rounded ${isUp ? "text-[#00c087] bg-[#00c087]/10" : "text-[#ff4757] bg-[#ff4757]/10"}`}>
-                  {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                  {Math.abs(change || 0).toFixed(2)}%
-                </span>
-              </>
-            )}
+        {/* ══════ TOP TOOLBAR ══════ */}
+        <div className="flex items-center gap-1 px-2 py-[5px] border-b border-[#2a2e39] bg-[#131722] shrink-0">
+
+          {/* Symbol */}
+          <div className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded hover:bg-[#1e222d] cursor-pointer transition-colors">
+            <span className="text-[13px] font-black text-[#d1d4dc]">{selectedStock?.symbol}</span>
+            <span className="text-[10px] text-[#787b86] max-w-[100px] truncate">{selectedStock?.name}</span>
+            {market === "saudi" ? <span className="text-[8px] text-[#787b86] bg-[#1e222d] px-1 rounded">تداول</span> : <span className="text-[8px] text-[#787b86] bg-[#1e222d] px-1 rounded">NYSE</span>}
           </div>
 
-          <div className="w-px h-5 bg-[#1a2540]" />
+          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
 
-          {/* Chart type selector */}
-          <div className="flex gap-0.5 bg-[#060a11] rounded-lg p-0.5">
-            {CHART_TYPES.map(t => (
-              <button key={t.value} onClick={() => setChartType(t.value)}
-                className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${chartType === t.value ? "bg-[#d4a843] text-black shadow-lg shadow-[#d4a843]/20" : "text-[#64748b] hover:text-white"}`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="w-px h-5 bg-[#1a2540]" />
-
-          {/* Timeframe selector */}
-          <div className="flex gap-0.5 bg-[#060a11] rounded-lg p-0.5">
+          {/* Timeframes */}
+          <div className="flex items-center gap-0">
             {TIMEFRAMES.map(tf => (
               <button key={tf.value} onClick={() => setTimeframe(tf.value)}
-                className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${timeframe === tf.value ? "bg-[#d4a843] text-black shadow-lg shadow-[#d4a843]/20" : "text-[#64748b] hover:text-white"}`}>
+                className={`px-2 py-1 text-[11px] font-semibold transition-all rounded ${
+                  timeframe === tf.value ? "text-[#d1d4dc] bg-[#2962ff]/20" : "text-[#787b86] hover:text-[#d1d4dc]"
+                }`}>
                 {tf.label}
               </button>
             ))}
           </div>
 
-          <div className="flex-1" />
+          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
 
-          {/* Indicators dropdown */}
+          {/* Chart type */}
+          <div className="relative">
+            <button onClick={() => setShowChartTypeMenu(!showChartTypeMenu)}
+              className="flex items-center gap-1 px-2 py-1 text-[#787b86] hover:text-[#d1d4dc] rounded hover:bg-[#1e222d] transition-all text-[11px]">
+              {chartType === "line" || chartType === "area" ? <LineChart className="w-4 h-4" /> : <BarChart2 className="w-4 h-4" />}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {showChartTypeMenu && (
+              <div className="absolute top-full left-0 mt-1 bg-[#131722] border border-[#2a2e39] rounded-lg shadow-2xl z-50 w-40 overflow-hidden">
+                {CHART_TYPES.map(t => (
+                  <button key={t.value} onClick={() => { setChartType(t.value); setShowChartTypeMenu(false); }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-[11px] transition-all ${
+                      chartType === t.value ? "bg-[#2962ff]/15 text-[#2962ff]" : "text-[#d1d4dc] hover:bg-[#1e222d]"
+                    }`}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+
+          {/* Indicators */}
           <div className="relative">
             <button onClick={() => setShowIndicators(!showIndicators)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                activeCount > 0 ? "bg-[#d4a843]/12 border border-[#d4a843]/30 text-[#d4a843]" : "bg-[#0d1420] border border-[#1a2540] text-[#64748b] hover:text-white"}`}>
-              <Layers className="w-3.5 h-3.5" />
-              مؤشرات
-              {activeCount > 0 && <span className="bg-[#d4a843] text-black rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-black">{activeCount}</span>}
+              className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+                showIndicators ? "bg-[#2962ff]/20 text-[#2962ff]" : "text-[#787b86] hover:text-[#d1d4dc]"
+              }`}>
+              <Activity className="w-3.5 h-3.5" />
+              <span>المؤشرات</span>
+              {activeCount > 0 && <span className="bg-[#2962ff] text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] font-black">{activeCount}</span>}
             </button>
             {showIndicators && <IndicatorMenu overlays={overlays} setOverlays={setOverlays} subs={subs} setSubs={setSubs} onClose={() => setShowIndicators(false)} />}
           </div>
 
-          {/* AI button */}
+          <div className="flex-1" />
+
+          {/* Price */}
+          {quote && (
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="font-bold text-[#d1d4dc]">{quote.price?.toFixed(2)}</span>
+              <span className={`font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
+                {isUp ? "+" : ""}{quote.change?.toFixed(2)}
+              </span>
+              <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${isUp ? "text-[#26a69a] bg-[#26a69a]/10" : "text-[#ef5350] bg-[#ef5350]/10"}`}>
+                {isUp ? "+" : ""}{(change || 0).toFixed(2)}%
+              </span>
+            </div>
+          )}
+
+          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+
+          {/* AI */}
           <button onClick={() => setShowAI(!showAI)}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-              showAI ? "bg-[#d4a843] text-black shadow-lg shadow-[#d4a843]/20" : "bg-[#d4a843]/12 border border-[#d4a843]/30 text-[#d4a843] hover:bg-[#d4a843]/20"}`}>
+            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+              showAI ? "bg-[#d4a843]/20 text-[#d4a843]" : "text-[#787b86] hover:text-[#d4a843]"
+            }`}>
             <Brain className="w-3.5 h-3.5" />
-            AI تحليل
+            AI
+          </button>
+
+          {/* IBKR Connection */}
+          <button onClick={() => setShowIbkr(!showIbkr)}
+            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+              ibkrState.connected
+                ? (showIbkr ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
+                : (showIbkr ? "bg-[#ff9800]/20 text-[#ff9800]" : "text-[#787b86] hover:text-[#ff9800]")
+            }`}>
+            {ibkrState.connected ? <Wifi className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">IBKR</span>
+            {ibkrState.useIbkr && <span className="w-1.5 h-1.5 rounded-full bg-[#26a69a] animate-pulse" />}
           </button>
 
           {/* Fullscreen */}
           <button onClick={toggleFullscreen}
-            className="p-1.5 rounded-lg bg-[#0d1420] border border-[#1a2540] text-[#64748b] hover:text-white transition-colors">
+            className="p-1.5 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all">
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
+
+          {/* Toggle sidebar */}
+          <button onClick={() => setShowRightSidebar(!showRightSidebar)}
+            className="p-1.5 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all">
+            {showRightSidebar ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
           </button>
         </div>
 
-        {/* ── CHART AREA ── */}
+        {/* ══════ INDICATOR LABELS ══════ */}
+        {overlayLabels.length > 0 && (
+          <div className="flex items-center gap-3 px-3 py-[3px] border-b border-[#2a2e39]/50 bg-[#131722] shrink-0 text-[10px]">
+            {overlayLabels.map((ol, i) => (
+              <span key={i} className="flex items-center gap-1">
+                <span className="w-3 h-[2px] rounded inline-block" style={{ backgroundColor: ol.color }} />
+                <span style={{ color: ol.color }}>{ol.label}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* ══════ CHART AREA ══════ */}
         <div className="flex-1 min-h-0 flex flex-col relative">
-          {/* Loading overlay */}
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#060a11]/80 z-20">
+          {loading && candles.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#131722]/90 z-20">
               <div className="flex flex-col items-center gap-3">
-                <Loader2 className="w-8 h-8 text-[#d4a843] animate-spin" />
-                <span className="text-xs text-[#64748b]">جاري تحميل البيانات...</span>
+                <Loader2 className="w-8 h-8 text-[#2962ff] animate-spin" />
+                <span className="text-xs text-[#787b86]">جاري تحميل البيانات...</span>
               </div>
             </div>
           )}
 
-          {/* AI Panel */}
           {showAI && candles.length > 0 && (
             <AiPanel symbol={selectedStock?.symbol} market={market} candles={candles} onClose={() => setShowAI(false)} />
           )}
 
-          {/* OHLCV Data bar */}
+          {showIbkr && (
+            <IbkrConnectionPanel ibkrState={ibkrState} setIbkrState={setIbkrState} onClose={() => setShowIbkr(false)} />
+          )}
+
+          {/* OHLCV */}
           {currentBar && (
-            <div className="absolute top-2 right-2 z-10 flex items-center gap-3 text-[10px] bg-[#060a11]/90 backdrop-blur-sm rounded-lg px-3 py-1.5 border border-[#1a2540]/50">
-              <span className="text-[#475569]">O <span className="text-white font-medium">{currentBar.open?.toFixed(2)}</span></span>
-              <span className="text-[#475569]">H <span className="text-[#00c087] font-medium">{currentBar.high?.toFixed(2)}</span></span>
-              <span className="text-[#475569]">L <span className="text-[#ff4757] font-medium">{currentBar.low?.toFixed(2)}</span></span>
-              <span className="text-[#475569]">C <span className="text-white font-bold">{currentBar.close?.toFixed(2)}</span></span>
-              <span className="text-[#475569]">V <span className="text-[#94a3b8]">{
-                currentBar.volume ? (currentBar.volume > 1e6 ? (currentBar.volume / 1e6).toFixed(1) + "M" : (currentBar.volume / 1e3).toFixed(0) + "K") : "-"
-              }</span></span>
+            <div className="absolute top-1 left-12 z-10 flex items-center gap-3 text-[11px]" dir="ltr">
+              <span className="text-[#787b86]">O <span className={`font-medium ${(currentBar.close || currentBar.value) >= (currentBar.open || 0) ? "text-[#26a69a]" : "text-[#ef5350]"}`}>{currentBar.open?.toFixed(2) || currentBar.value?.toFixed(2)}</span></span>
+              {currentBar.high != null && <span className="text-[#787b86]">H <span className="text-[#26a69a] font-medium">{currentBar.high?.toFixed(2)}</span></span>}
+              {currentBar.low != null && <span className="text-[#787b86]">L <span className="text-[#ef5350] font-medium">{currentBar.low?.toFixed(2)}</span></span>}
+              <span className="text-[#787b86]">C <span className={`font-bold ${(currentBar.close || currentBar.value) >= (currentBar.open || 0) ? "text-[#26a69a]" : "text-[#ef5350]"}`}>{currentBar.close?.toFixed(2) || currentBar.value?.toFixed(2)}</span></span>
+              {currentBar.volume > 0 && <span className="text-[#787b86]">V <span className="text-[#787b86]">{formatVol(currentBar.volume)}</span></span>}
             </div>
           )}
 
           {selectedStock ? (
             <>
-              {/* Main chart */}
               <div ref={mainContainerRef} className="flex-1 w-full min-h-0" />
 
-              {/* RSI sub-panel */}
               {subs.rsi.enabled && (
-                <div className="border-t border-[#1a2540] relative">
-                  <span className="absolute top-1 left-2 z-10 text-[9px] text-[#22d3ee] font-bold bg-[#060a11]/80 px-1.5 py-0.5 rounded">RSI ({subs.rsi.period})</span>
-                  <div ref={rsiContainerRef} className="w-full" style={{ height: 90 }} />
+                <div className="border-t border-[#2a2e39] relative">
+                  <span className="absolute top-1 left-2 z-10 text-[10px] text-[#7b2ff7] font-semibold px-1.5 py-0.5 rounded bg-[#131722]/90">RSI {subs.rsi.period}</span>
+                  <div ref={rsiContainerRef} className="w-full" style={{ height: 100 }} />
                 </div>
               )}
 
-              {/* MACD sub-panel */}
               {subs.macd.enabled && (
-                <div className="border-t border-[#1a2540] relative">
-                  <span className="absolute top-1 left-2 z-10 text-[9px] text-[#a78bfa] font-bold bg-[#060a11]/80 px-1.5 py-0.5 rounded">
-                    MACD ({subs.macd.fast},{subs.macd.slow},{subs.macd.signal})
+                <div className="border-t border-[#2a2e39] relative">
+                  <span className="absolute top-1 left-2 z-10 text-[10px] text-[#2962ff] font-semibold px-1.5 py-0.5 rounded bg-[#131722]/90">
+                    MACD {subs.macd.fast},{subs.macd.slow},{subs.macd.signal}
                   </span>
-                  <div ref={macdContainerRef} className="w-full" style={{ height: 100 }} />
+                  <div ref={macdContainerRef} className="w-full" style={{ height: 110 }} />
                 </div>
               )}
 
-              {/* Stochastic sub-panel */}
               {subs.stochastic.enabled && (
-                <div className="border-t border-[#1a2540] relative">
-                  <span className="absolute top-1 left-2 z-10 text-[9px] text-[#f472b6] font-bold bg-[#060a11]/80 px-1.5 py-0.5 rounded">
-                    Stochastic ({subs.stochastic.kPeriod},{subs.stochastic.dPeriod})
+                <div className="border-t border-[#2a2e39] relative">
+                  <span className="absolute top-1 left-2 z-10 text-[10px] text-[#e040fb] font-semibold px-1.5 py-0.5 rounded bg-[#131722]/90">
+                    Stoch {subs.stochastic.kPeriod},{subs.stochastic.dPeriod}
                   </span>
-                  <div ref={stochContainerRef} className="w-full" style={{ height: 90 }} />
+                  <div ref={stochContainerRef} className="w-full" style={{ height: 100 }} />
                 </div>
               )}
             </>
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-4">
-              <BarChart3 className="w-16 h-16 text-[#1a2540]" />
-              <p className="text-[#64748b]">اختر سهماً من القائمة</p>
+              <BarChart3 className="w-16 h-16 text-[#2a2e39]" />
+              <p className="text-[#787b86]">اختر سهماً من القائمة</p>
             </div>
           )}
         </div>
 
-        {/* ── STATUS BAR ── */}
-        <div className="flex items-center gap-3 px-3 py-1 border-t border-[#1a2540] bg-[#0a0f18] shrink-0 text-[9px]">
-          {overlays.ema20.enabled && <span className="flex items-center gap-1 text-[#f59e0b]"><span className="w-3 h-0.5 bg-[#f59e0b] inline-block rounded" /> EMA 20</span>}
-          {overlays.ema50.enabled && <span className="flex items-center gap-1 text-[#818cf8]"><span className="w-3 h-0.5 bg-[#818cf8] inline-block rounded" /> EMA 50</span>}
-          {overlays.sma200.enabled && <span className="flex items-center gap-1 text-[#fb923c]"><span className="w-3 h-0.5 bg-[#fb923c] inline-block rounded" /> SMA 200</span>}
-          {overlays.bb.enabled && <span className="flex items-center gap-1 text-[#a78bfa]"><span className="w-3 h-0.5 bg-[#a78bfa] inline-block rounded" /> BB</span>}
-          {overlays.vwap.enabled && <span className="flex items-center gap-1 text-[#22d3ee]"><span className="w-3 h-0.5 bg-[#22d3ee] inline-block rounded" /> VWAP</span>}
-          {subs.rsi.enabled && <span className="flex items-center gap-1 text-[#22d3ee]">◆ RSI</span>}
-          {subs.macd.enabled && <span className="flex items-center gap-1 text-[#a78bfa]">◆ MACD</span>}
-          {subs.stochastic.enabled && <span className="flex items-center gap-1 text-[#f472b6]">◆ Stoch</span>}
-          <span className="flex items-center gap-1 text-[#00c087]">■ صعود</span>
-          <span className="flex items-center gap-1 text-[#ff4757]">■ هبوط</span>
-          <span className="flex-1" />
-          <span className="text-[#475569]">DFA Pro · محلل الأسواق المالية المتقدم</span>
+        {/* ══════ STATUS BAR ══════ */}
+        <div className="flex items-center justify-between px-3 py-[3px] border-t border-[#2a2e39] bg-[#131722] shrink-0 text-[10px]" dir="rtl">
+          <div className="flex items-center gap-3">
+            {subs.rsi.enabled && <span className="text-[#7b2ff7]">◆ RSI</span>}
+            {subs.macd.enabled && <span className="text-[#2962ff]">◆ MACD</span>}
+            {subs.stochastic.enabled && <span className="text-[#e040fb]">◆ Stoch</span>}
+          </div>
+          <div className="flex items-center gap-3">
+            {ibkrState.useIbkr && ibkrState.connected && (
+              <span className="flex items-center gap-1 text-[#ff9800]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#26a69a] animate-pulse" />
+                IBKR Live
+              </span>
+            )}
+            <span className="flex items-center gap-1 text-[#26a69a]">■ صعود</span>
+            <span className="flex items-center gap-1 text-[#ef5350]">■ هبوط</span>
+            <span className="text-[#434651]">|</span>
+            <span className="text-[#787b86]">DFA Pro</span>
+          </div>
         </div>
       </div>
+
+      {/* ── RIGHT SIDEBAR ── */}
+      {showRightSidebar && (
+        <RightSidebar
+          market={market}
+          selectedStock={selectedStock}
+          onSelect={handleSelect}
+          quote={quote}
+          candles={candles}
+          search={search}
+          setSearch={setSearch}
+          handleSelectMarket={handleSelectMarket}
+        />
+      )}
     </div>
   );
 }
