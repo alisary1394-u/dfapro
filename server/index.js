@@ -10,6 +10,7 @@ import nodemailer from 'nodemailer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
+import { Server as SocketIO } from 'socket.io';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -982,6 +983,91 @@ app.get('*', async (req, res, next) => {
 });
 
 const server = createServer(app);
+
+// ── Socket.IO for live price streaming ──────────────────────
+const io = new SocketIO(server, { cors: { origin: '*' } });
+
+// Track which symbols each client is watching
+const clientSubs = new Map(); // socketId → { symbols: Set, market: string }
+
+io.on('connection', (socket) => {
+  socket.on('subscribe', ({ symbols, market }) => {
+    if (!Array.isArray(symbols) || !market) return;
+    const clean = symbols.map(s => String(s).trim()).filter(Boolean).slice(0, 50);
+    clientSubs.set(socket.id, { symbols: new Set(clean), market });
+  });
+  socket.on('unsubscribe', () => clientSubs.delete(socket.id));
+  socket.on('disconnect', () => clientSubs.delete(socket.id));
+});
+
+// Aggregate all watched symbols and broadcast prices every 3 seconds
+let livePriceTimer = null;
+const startLivePrices = () => {
+  if (livePriceTimer) return;
+  livePriceTimer = setInterval(async () => {
+    // Collect all unique symbols per market
+    const byMarket = {};
+    for (const [, sub] of clientSubs) {
+      if (!byMarket[sub.market]) byMarket[sub.market] = new Set();
+      for (const sym of sub.symbols) byMarket[sub.market].add(sym);
+    }
+    // Fetch quotes for each market
+    for (const [market, symbolSet] of Object.entries(byMarket)) {
+      const symbols = [...symbolSet];
+      if (symbols.length === 0) continue;
+
+      const quotes = {};
+      const toFetch = [];
+      // Use cache first
+      for (const sym of symbols) {
+        const hit = cacheGet(`quote:${sym}:${market}`);
+        if (hit) quotes[sym] = hit;
+        else toFetch.push(sym);
+      }
+      // Fetch uncached (in batches of 10 to avoid overload)
+      for (let i = 0; i < toFetch.length; i += 10) {
+        const batch = toFetch.slice(i, i + 10);
+        const results = await Promise.allSettled(
+          batch.map(s => {
+            const ySymbol = toYahooSymbol(s, market);
+            return yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=1d&range=2d`);
+          })
+        );
+        results.forEach((r, idx) => {
+          const sym = batch[idx];
+          if (r.status !== 'fulfilled') return;
+          const meta = r.value.chart?.result?.[0]?.meta;
+          const q = r.value.chart?.result?.[0]?.indicators?.quote?.[0];
+          if (!meta) return;
+          const price = meta.regularMarketPrice ?? 0;
+          const prev = meta.previousClose ?? meta.chartPreviousClose ?? price;
+          const change = +(price - prev).toFixed(2);
+          const changePct = prev !== 0 ? +((change / prev) * 100).toFixed(2) : 0;
+          const volumes = q?.volume?.filter(v => v != null) || [];
+          const quoteData = {
+            price: +price.toFixed(2), change, change_percent: changePct,
+            volume: volumes.length > 0 ? volumes[volumes.length - 1] : 0,
+            name: meta.shortName || sym,
+          };
+          quotes[sym] = quoteData;
+          cacheSet(`quote:${sym}:${market}`, quoteData, TTL.quote);
+        });
+      }
+      // Emit to each socket that watches this market
+      for (const [socketId, sub] of clientSubs) {
+        if (sub.market !== market) continue;
+        const payload = {};
+        for (const sym of sub.symbols) {
+          if (quotes[sym]) payload[sym] = quotes[sym];
+        }
+        if (Object.keys(payload).length > 0) {
+          io.to(socketId).emit('prices', payload);
+        }
+      }
+    }
+  }, 3000);
+};
+startLivePrices();
 
 server.listen(port, '0.0.0.0', () => {
   console.log(`Server listening on ${port}`);

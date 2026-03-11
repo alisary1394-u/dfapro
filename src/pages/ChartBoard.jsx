@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createChart, CrosshairMode, LineStyle } from "lightweight-charts";
 import { getQuote } from "@/components/api/marketDataClient";
+import { useLivePrices } from "@/hooks/useLivePrices";
 import {
   ibkrConfig,
   connectToGateway,
@@ -831,21 +832,27 @@ function IndicatorMenu({ overlays, setOverlays, subs, setSubs, onClose }) {
 // ═══════════════════════════════════════════════════════════════
 // STOCK ROW
 // ═══════════════════════════════════════════════════════════════
-function StockRow({ stock, market, isActive, onSelect }) {
-  const [quote, setQuote] = useState(null);
-  useEffect(() => {
-    const fetchQuote = () => getQuote(stock.symbol, market).then(q => setQuote(q)).catch(() => {});
-    fetchQuote();
-    const iv = setInterval(fetchQuote, 10000);
-    return () => clearInterval(iv);
-  }, [stock.symbol, market]);
+function StockRow({ stock, market, isActive, onSelect, liveQuote, prevQuote }) {
+  const [flashClass, setFlashClass] = useState("");
+  const flashTimer = useRef(null);
 
+  useEffect(() => {
+    if (!liveQuote || !prevQuote) return;
+    if (liveQuote.price === prevQuote.price) return;
+    const cls = liveQuote.price > prevQuote.price ? "price-flash-up" : "price-flash-down";
+    setFlashClass(cls);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashClass(""), 600);
+    return () => { if (flashTimer.current) clearTimeout(flashTimer.current); };
+  }, [liveQuote?.price]);
+
+  const quote = liveQuote;
   const change = quote?.change_percent;
   const isUp = change >= 0;
 
   return (
     <button onClick={() => onSelect(stock)}
-      className={`w-full flex items-center justify-between px-2.5 py-[7px] text-right transition-all ${
+      className={`w-full flex items-center justify-between px-2.5 py-[7px] text-right transition-all ${flashClass} ${
         isActive ? "bg-[#2962ff]/12 border-r-2 border-r-[#2962ff]" : "hover:bg-[#1e222d] border-r-2 border-r-transparent"}`}>
       <div className="text-right flex-1 min-w-0">
         <div className={`text-[11px] font-bold ${isActive ? "text-[#2962ff]" : "text-[#d1d4dc]"}`}>{stock.symbol}</div>
@@ -854,7 +861,7 @@ function StockRow({ stock, market, isActive, onSelect }) {
       <div className="text-left ml-1 shrink-0">
         {quote ? (
           <>
-            <div className="text-[11px] font-bold text-[#d1d4dc]">{quote.price?.toFixed(2)}</div>
+            <div className={`text-[11px] font-bold price-value ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>{quote.price?.toFixed(2)}</div>
             <div className={`text-[9px] font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
               {isUp ? "+" : ""}{(change || 0).toFixed(2)}%
             </div>
@@ -874,6 +881,8 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
 
   const sectors = market === "saudi" ? SAUDI_SECTORS : [{ sector: "الأسهم الأمريكية", items: US_STOCKS }];
   const allItems = sectors.flatMap(s => s.items);
+  const allSymbols = useMemo(() => allItems.map(s => s.symbol), [market]);
+  const { prices: livePrices, prevPrices } = useLivePrices(allSymbols, market);
   const filtered = search ? allItems.filter(s => s.symbol.toLowerCase().includes(search.toLowerCase()) || s.name.includes(search)) : null;
 
   const change = quote?.change_percent;
@@ -934,7 +943,7 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             {filtered ? filtered.map(s => (
-              <StockRow key={s.symbol} stock={s} market={market} isActive={selectedStock?.symbol === s.symbol} onSelect={onSelect} />
+              <StockRow key={s.symbol} stock={s} market={market} isActive={selectedStock?.symbol === s.symbol} onSelect={onSelect} liveQuote={livePrices[s.symbol]} prevQuote={prevPrices[s.symbol]} />
             )) : sectors.map(sec => (
               <div key={sec.sector}>
                 <button onClick={() => setExpanded(expanded === sec.sector ? null : sec.sector)}
@@ -943,7 +952,7 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
                   <span>{sec.sector}</span>
                 </button>
                 {(expanded === sec.sector || expanded === null) && sec.items.map(s => (
-                  <StockRow key={s.symbol + sec.sector} stock={s} market={market} isActive={selectedStock?.symbol === s.symbol} onSelect={onSelect} />
+                  <StockRow key={s.symbol + sec.sector} stock={s} market={market} isActive={selectedStock?.symbol === s.symbol} onSelect={onSelect} liveQuote={livePrices[s.symbol]} prevQuote={prevPrices[s.symbol]} />
                 ))}
               </div>
             ))}

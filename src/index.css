@@ -100,3 +100,23 @@ a[href*="tradingview"],
   position: absolute !important;
   overflow: hidden !important;
 }
+
+/* Live price flash animations */
+@keyframes flash-green {
+  0% { background-color: rgba(38, 166, 154, 0.35); }
+  100% { background-color: transparent; }
+}
+@keyframes flash-red {
+  0% { background-color: rgba(239, 83, 80, 0.35); }
+  100% { background-color: transparent; }
+}
+.price-flash-up {
+  animation: flash-green 0.6s ease-out;
+}
+.price-flash-down {
+  animation: flash-red 0.6s ease-out;
+}
+.price-value {
+  transition: color 0.15s ease;
+  font-variant-numeric: tabular-nums;
+}
