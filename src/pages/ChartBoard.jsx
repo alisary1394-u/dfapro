@@ -166,6 +166,20 @@ const chartOpts = (container) => ({
   handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
 });
 
+// Remove TradingView attribution logo/link from a chart container
+const removeTVLogo = (container) => {
+  if (!container) return;
+  const remove = () => {
+    container.querySelectorAll('a[href*="tradingview"], #tv-attr-logo, [id*="tv-attr"]').forEach(el => el.remove());
+    container.querySelectorAll('style').forEach(el => { if (el.innerText?.includes('tv-attr')) el.remove(); });
+  };
+  remove();
+  // MutationObserver to catch dynamically added logos
+  const obs = new MutationObserver(remove);
+  obs.observe(container, { childList: true, subtree: true });
+  return () => obs.disconnect();
+};
+
 const calcVWAP = (data) => {
   let cumVP = 0, cumVol = 0;
   return data.map(c => {
@@ -1524,6 +1538,7 @@ export default function ChartBoard() {
 
       chart.timeScale().fitContent();
       mainChartRef.current = chart;
+      cleanups.push(removeTVLogo(mainContainer));
 
       // Sync sub-charts
       chart.timeScale().subscribeVisibleLogicalRangeChange(range => {
@@ -1566,6 +1581,7 @@ export default function ChartBoard() {
       series.createPriceLine({ price: 50, color: "rgba(120,123,134,0.2)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false });
       chart.timeScale().fitContent();
       rsiChartRef.current = chart;
+      cleanups.push(removeTVLogo(container));
     } else {
       if (rsiChartRef.current) { try { rsiChartRef.current.remove(); } catch (_) {} rsiChartRef.current = null; }
     }
@@ -1593,6 +1609,7 @@ export default function ChartBoard() {
       chart.addLineSeries({ color: "#ff9800", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceScaleId: "macd" }).setData(signalLine);
       chart.timeScale().fitContent();
       macdChartRef.current = chart;
+      cleanups.push(removeTVLogo(container));
     } else {
       if (macdChartRef.current) { try { macdChartRef.current.remove(); } catch (_) {} macdChartRef.current = null; }
     }
@@ -1619,6 +1636,7 @@ export default function ChartBoard() {
       kSeries.createPriceLine({ price: 20, color: "rgba(38,166,154,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
       chart.timeScale().fitContent();
       stochChartRef.current = chart;
+      cleanups.push(removeTVLogo(container));
     } else {
       if (stochChartRef.current) { try { stochChartRef.current.remove(); } catch (_) {} stochChartRef.current = null; }
     }
