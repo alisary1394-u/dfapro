@@ -187,7 +187,7 @@ export default function Layout({ children, currentPageName }) {
       `}</style>
 
       {/* ── Desktop Top Bar ── */}
-      <div className="hidden lg:flex fixed top-0 z-40 items-center" style={{ right: 'var(--sidebar-w)', left: ['StockAnalysis', 'OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) ? '12rem' : '0', height: '48px' }}>
+      <div className="hidden lg:flex fixed top-0 z-40 items-center" style={{ right: 'var(--sidebar-w)', left: ['OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) ? '12rem' : '0', height: '48px' }}>
         <div className="w-full h-full glass border-b border-[#1a2540] px-4 flex items-center gap-3">
           <div className="flex-1 min-w-0">
             <MarketOverviewBar compact />
@@ -299,8 +299,8 @@ export default function Layout({ children, currentPageName }) {
         </div>
       </aside>
 
-      {/* ── Stock Sidebar (desktop only, analysis pages) ── */}
-      {['StockAnalysis', 'OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) && (
+      {/* ── Stock Sidebar (desktop only, analysis pages except StockAnalysis) ── */}
+      {['OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) && (
         <div className="hidden lg:block">
           <StockSidebar currentPageName={currentPageName} />
         </div>
@@ -332,7 +332,7 @@ export default function Layout({ children, currentPageName }) {
       )}
 
       {/* ── Main Content ── */}
-      <main className={`lg:mr-[17rem] min-h-screen pt-14 lg:pt-12 ${['StockAnalysis', 'OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) ? 'lg:ml-48' : 'lg:ml-0'}`}>
+      <main className={`lg:mr-[17rem] min-h-screen pt-14 lg:pt-12 ${['OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) ? 'lg:ml-48' : 'lg:ml-0'}`}>
         <div className="p-4 md:p-5 lg:p-7 animate-fade-in-up">
           {children}
         </div>
