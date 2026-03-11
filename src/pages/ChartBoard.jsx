@@ -1616,34 +1616,35 @@ export default function ChartBoard() {
     if (ibkrState.connected && ibkrState.useIbkr) {
       try {
         const info = await resolveConid(selectedStock.symbol);
-        if (!info?.conid) { setLoading(false); return; }
-        const historyResponse = await getHistoricalData(info.conid, selectedTf.interval, info.exchange, info.currency, info.secType);
-        const ibkrCandles = parseHistoryToCandles(historyResponse);
+        if (info?.conid) {
+          const historyResponse = await getHistoricalData(info.conid, selectedTf.interval, info.exchange, info.currency, info.secType);
+          const ibkrCandles = parseHistoryToCandles(historyResponse);
 
-        if (ibkrCandles.length > 0) {
-          // Normalize times
-          const isIntraday = ["1min", "5min", "15min", "30min", "60min"].includes(selectedTf.interval);
-          const normalized = ibkrCandles.map(c => {
-            let t = c.time;
-            if (!isIntraday && typeof t === 'number') {
-              t = new Date(t * 1000).toISOString().substring(0, 10);
+          if (ibkrCandles.length > 0) {
+            const isIntraday = ["1min", "5min", "15min", "30min", "60min"].includes(selectedTf.interval);
+            const normalized = ibkrCandles.map(c => {
+              let t = c.time;
+              if (!isIntraday && typeof t === 'number') {
+                t = new Date(t * 1000).toISOString().substring(0, 10);
+              }
+              return { ...c, time: t };
+            });
+            const seen = new Set();
+            const processed = normalized
+              .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
+              .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
+            if (processed.length > 0) {
+              setCandles(processed);
+              setCurrentBar(processed[processed.length - 1]);
+              setLoading(false);
+              return;
             }
-            return { ...c, time: t };
-          });
-          const seen = new Set();
-          const processed = normalized
-            .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
-            .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
-          if (processed.length > 0) {
-            setCandles(processed);
-            setCurrentBar(processed[processed.length - 1]);
           }
         }
       } catch (err) {
         console.error('[IBKR] History error:', err);
       }
-      setLoading(false);
-      return;
+      // Fall through to Yahoo Finance if IBKR returned no data for this symbol
     }
 
     // ── Alpaca candles ──
@@ -1670,13 +1671,14 @@ export default function ChartBoard() {
           if (processed.length > 0) {
             setCandles(processed);
             setCurrentBar(processed[processed.length - 1]);
+            setLoading(false);
+            return;
           }
         }
       } catch (err) {
         console.error('[Alpaca] History error:', err);
       }
-      setLoading(false);
-      return;
+      // Fall through to Yahoo Finance if Alpaca returned no data for this symbol
     }
 
     // ── Standard Yahoo candles ──
