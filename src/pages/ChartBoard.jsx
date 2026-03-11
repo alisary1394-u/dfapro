@@ -261,7 +261,7 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
   };
 
   return (
-    <div className="absolute top-2 right-14 w-[320px] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden" dir="rtl">
+    <div className="absolute top-2 right-14 w-[min(320px,calc(100vw-1rem))] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden" dir="rtl">
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#2a2e39] bg-[#1e222d]">
         <div className="flex items-center gap-1.5">
           <Zap className="w-4 h-4 text-[#ff9800]" />
@@ -451,7 +451,7 @@ function AlpacaConnectionPanel({ alpacaState, setAlpacaState, onClose }) {
   };
 
   return (
-    <div className="absolute top-2 right-14 w-[320px] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden" dir="rtl">
+    <div className="absolute top-2 right-14 w-[min(320px,calc(100vw-1rem))] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden" dir="rtl">
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#2a2e39] bg-[#1e222d]">
         <div className="flex items-center gap-1.5">
           <Key className="w-4 h-4 text-[#ffeb3b]" />
@@ -632,7 +632,7 @@ function AiPanel({ symbol, market, candles, onClose }) {
     : result?.risk_level?.includes("منخفض") ? C.up : C.gold;
 
   return (
-    <div className="absolute top-2 left-14 w-[280px] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden">
+    <div className="absolute top-2 left-14 w-[min(280px,calc(100vw-1rem))] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#2a2e39] bg-[#1e222d]">
         <div className="flex items-center gap-1.5">
           <Brain className="w-4 h-4 text-[#d4a843]" />
@@ -901,7 +901,7 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
   }, [candles]);
 
   return (
-    <div className="w-[280px] shrink-0 bg-[#131722] border-l border-[#2a2e39] flex flex-col overflow-hidden">
+    <div className="w-full md:w-[280px] shrink-0 bg-[#131722] border-l border-[#2a2e39] flex flex-col overflow-hidden">
       {/* Market tabs */}
       <div className="flex border-b border-[#2a2e39] shrink-0">
         <button onClick={() => handleSelectMarket("saudi")}
@@ -1062,7 +1062,7 @@ export default function ChartBoard() {
   const [loading, setLoading] = useState(false);
   const [currentBar, setCurrentBar] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [showRightSidebar, setShowRightSidebar] = useState(() => window.innerWidth >= 768);
   const [activeTool, setActiveTool] = useState("cursor");
   const [drawings, setDrawings] = useState([]);
   const [showChartTypeMenu, setShowChartTypeMenu] = useState(false);
@@ -1714,7 +1714,7 @@ export default function ChartBoard() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* ══════ TOP TOOLBAR ══════ */}
-        <div className="flex items-center gap-1 px-2 py-[5px] border-b border-[#2a2e39] bg-[#131722] shrink-0">
+        <div className="flex items-center gap-1 px-2 py-[5px] border-b border-[#2a2e39] bg-[#131722] shrink-0 overflow-x-auto">
 
           {/* Symbol */}
           <div className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded hover:bg-[#1e222d] cursor-pointer transition-colors">
@@ -1968,16 +1968,25 @@ export default function ChartBoard() {
 
       {/* ── RIGHT SIDEBAR ── */}
       {showRightSidebar && (
-        <RightSidebar
-          market={market}
-          selectedStock={selectedStock}
-          onSelect={handleSelect}
-          quote={quote}
-          candles={candles}
-          search={search}
-          setSearch={setSearch}
-          handleSelectMarket={handleSelectMarket}
-        />
+        <>
+          {/* Mobile overlay backdrop */}
+          <div
+            className="md:hidden fixed inset-0 z-40 bg-black/60"
+            onClick={() => setShowRightSidebar(false)}
+          />
+          <div className="fixed md:relative inset-y-0 right-0 z-50 md:z-auto">
+            <RightSidebar
+              market={market}
+              selectedStock={selectedStock}
+              onSelect={handleSelect}
+              quote={quote}
+              candles={candles}
+              search={search}
+              setSearch={setSearch}
+              handleSelectMarket={handleSelectMarket}
+            />
+          </div>
+        </>
       )}
     </div>
   );

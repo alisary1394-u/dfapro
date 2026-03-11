@@ -440,7 +440,7 @@ export default function Backtesting({ stock }) {
               <AlertTriangle className="w-4 h-4 text-amber-400" />
               <h3 className="text-sm font-bold text-white">تحليل التراجع (Drawdown)</h3>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-[#0f1623] rounded-xl p-4 text-center border border-[#1e293b]">
                 <p className="text-2xl font-black text-red-400">-{result.maxDrawdown}%</p>
                 <p className="text-xs text-[#64748b] mt-1">أقصى تراجع</p>

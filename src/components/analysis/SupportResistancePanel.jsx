@@ -317,7 +317,7 @@ export default function SupportResistancePanel({ data }) {
         <p className="text-xs font-bold text-[#64748b] mb-3 flex items-center gap-2">
           <Zap className="w-3.5 h-3.5 text-[#d4a843]" /> المتوسطات المتحركة كدعم/مقاومة
         </p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {[
             { label: "EMA 20", value: sr.ema20, period: 20, color: "#f59e0b" },
             { label: "EMA 50", value: sr.ema50, period: 50, color: "#f97316" },

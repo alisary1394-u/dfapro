@@ -367,7 +367,7 @@ export default function Dashboard() {
       if (!usedGroup.volume_chart && !usedGroup.sentiment) {
         // insert the group at the position of whichever comes first
         rendered.push(
-          <div key="vol_sentiment" className="grid lg:grid-cols-3 gap-6">
+          <div key="vol_sentiment" className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {volumeVisible && <div className="lg:col-span-2">{widgetMap["volume_chart"]}</div>}
             {sentimentVisible && <div>{widgetMap["sentiment"]}</div>}
           </div>
