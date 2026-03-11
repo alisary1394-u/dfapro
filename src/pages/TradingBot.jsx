@@ -581,7 +581,7 @@ export default function TradingBot() {
               <BarChart2 className="w-4 h-4 text-[#d4a843]" />
               <h3 className="text-sm font-bold text-white">تحليل كل الأطر الزمنية</h3>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-1.5">
               {TIMEFRAMES.map(tf => {
                 const r = tfResults[tf.key];
                 const isActive = activeTimeframe === tf.key;

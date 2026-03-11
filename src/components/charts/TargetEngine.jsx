@@ -337,7 +337,7 @@ export default function TargetEngine({ data }) {
         </div>
 
         {/* Entry + SL + RR */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div className="bg-blue-500/8 border border-blue-500/25 rounded-xl p-3 text-center">
             <p className="text-xs text-[#64748b]">سعر الدخول</p>
             <p className="text-lg font-black text-blue-400">{price.toFixed(2)}</p>

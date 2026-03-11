@@ -376,7 +376,7 @@ export default function MLPredictionEngine({ data }) {
         </div>
 
         {/* 3 stats */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div className="bg-[#151c2c] rounded-xl p-3 text-center">
             <p className="text-xs text-[#64748b] mb-1">وقف الخسارة</p>
             <p className="text-base font-black text-red-400">{rr.stopLoss}</p>

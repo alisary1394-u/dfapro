@@ -111,7 +111,7 @@ export default function Portfolio() {
           <PortfolioStats holdings={holdings} />
 
           {/* Main Content */}
-          <div className="grid lg:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Holdings */}
             <div className="lg:col-span-2 bg-[#151c2c] border border-[#1e293b] rounded-2xl overflow-hidden">
               <div className="p-5 border-b border-[#1e293b] flex items-center justify-between">
