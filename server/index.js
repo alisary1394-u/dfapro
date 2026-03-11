@@ -15,7 +15,7 @@ import { Server as SocketIO } from 'socket.io';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
-const dataDir = path.join(rootDir, 'data');
+const dataDir = process.env.DFA_DATA_DIR || path.join(rootDir, 'data');
 const dbPath = path.join(dataDir, 'auth.json');
 const distDir = path.join(rootDir, 'dist');
 const port = Number(process.env.PORT || 8080);
