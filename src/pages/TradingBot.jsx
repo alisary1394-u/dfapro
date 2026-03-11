@@ -1,17 +1,16 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import SearchStock from "@/components/ui/SearchStock";
 import { computeTargets } from "@/components/charts/TargetEngine";
-import { calcOBV, calcAD, calcMFI, calcCMF, calcVSA, calcATR, detectCandlePatterns, detectWyckoffPhase, calcVWAP } from "@/components/charts/SmartIndicators";
 import Backtesting from "@/components/charts/Backtesting";
 import SentimentAnalysis from "@/components/analysis/SentimentAnalysis";
 import ContractScanner from "@/components/trading/ContractScanner";
 import BrokerManager from "@/components/trading/BrokerManager";
 import OrderExecutor from "@/components/trading/OrderExecutor";
 import {
-  Bot, Play, Pause, Square, TrendingUp, TrendingDown,
-  Zap, Shield, Target, Activity, Clock, DollarSign,
-  BarChart2, Settings, ChevronRight, AlertTriangle, Wifi, WifiOff, FlaskConical, Radar
+  Bot, Play, Pause, Square,
+  Zap, Activity, Clock,
+  BarChart2, Settings, FlaskConical, Radar
 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 

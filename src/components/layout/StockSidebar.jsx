@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { entities } from "@/api/entities";
-import { Search, TrendingUp, ChevronDown, ChevronUp, FolderOpen } from "lucide-react";
+import { Search, TrendingUp, ChevronDown, FolderOpen } from "lucide-react";
 
 const STOCKS = {
   us: [

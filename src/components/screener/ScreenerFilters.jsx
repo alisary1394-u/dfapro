@@ -1,5 +1,4 @@
 import React from "react";
-import { Filter, Globe, TrendingUp } from "lucide-react";
 
 const MARKETS = [
   { v: "all", l: "الكل" },

@@ -3,7 +3,7 @@ import {
   calcOBV, calcAD, calcMFI, calcCMF, calcVSA, detectWyckoffPhase,
   detectCandlePatterns, calcVWAP, calcATR, calcLiquidityHeatmap
 } from "./SmartIndicators";
-import { Zap, Eye, AlertTriangle, Target, Activity, Droplets, TrendingUp, TrendingDown, ChevronDown, ChevronUp } from "lucide-react";
+import { Zap, Eye, AlertTriangle, Activity, Droplets, ChevronDown, ChevronUp } from "lucide-react";
 
 // ===== Strength Bar =====
 const StrengthBar = ({ value, max = 100, color }) => (

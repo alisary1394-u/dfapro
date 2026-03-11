@@ -132,3 +132,92 @@ export function calcBollingerBands(data, period = 20, multiplier = 2) {
   }
   return { upper, middle, lower };
 }
+
+/** ATR – Wilder's Average True Range */
+export function calcATR(data, period = 14) {
+  if (!data || data.length < period + 1) return [];
+  const trs = [];
+  for (let i = 1; i < data.length; i++) {
+    const tr = Math.max(
+      data[i].high - data[i].low,
+      Math.abs(data[i].high - data[i - 1].close),
+      Math.abs(data[i].low  - data[i - 1].close),
+    );
+    trs.push({ time: data[i].time, tr });
+  }
+  const result = [];
+  let atr = trs.slice(0, period).reduce((s, v) => s + v.tr, 0) / period;
+  result.push({ time: trs[period - 1].time, value: parseFloat(atr.toFixed(4)) });
+  for (let i = period; i < trs.length; i++) {
+    atr = (atr * (period - 1) + trs[i].tr) / period;
+    result.push({ time: trs[i].time, value: parseFloat(atr.toFixed(4)) });
+  }
+  return result;
+}
+
+/**
+ * Candlestick pattern detection.
+ * Returns array of { time, pattern, color, shape, position }
+ * shape: 'arrowUp' | 'arrowDown' | 'circle'  (lightweight-charts marker shapes)
+ * position: 'belowBar' | 'aboveBar'
+ */
+export function detectPatterns(data) {
+  const patterns = [];
+  if (!data || data.length < 3) return patterns;
+
+  for (let i = 2; i < data.length; i++) {
+    const c  = data[i];
+    const p  = data[i - 1];
+    const pp = data[i - 2];
+
+    const body       = Math.abs(c.close - c.open);
+    const range      = c.high - c.low;
+    const upperWick  = c.high - Math.max(c.open, c.close);
+    const lowerWick  = Math.min(c.open, c.close) - c.low;
+    const isGreen    = c.close > c.open;
+    const isRed      = c.close < c.open;
+
+    if (range < 1e-9) continue;
+
+    // Doji – very small body
+    if (body / range < 0.08) {
+      patterns.push({ time: c.time, pattern: 'Doji', color: '#ffeb3b', shape: 'circle', position: 'belowBar' });
+      continue;
+    }
+    // Hammer – long lower wick, small upper wick, small body near top
+    if (lowerWick > body * 2 && upperWick < body * 0.5 && body > 0) {
+      patterns.push({ time: c.time, pattern: 'Hammer', color: '#26a69a', shape: 'arrowUp', position: 'belowBar' });
+      continue;
+    }
+    // Shooting Star – long upper wick, small lower wick
+    if (upperWick > body * 2 && lowerWick < body * 0.5 && body > 0) {
+      patterns.push({ time: c.time, pattern: 'Shooting Star', color: '#ef5350', shape: 'arrowDown', position: 'aboveBar' });
+      continue;
+    }
+    // Bullish Engulfing
+    if (isGreen && p.close < p.open && c.open <= p.close && c.close >= p.open) {
+      patterns.push({ time: c.time, pattern: 'Engulfing ↑', color: '#26a69a', shape: 'arrowUp', position: 'belowBar' });
+      continue;
+    }
+    // Bearish Engulfing
+    if (isRed && p.close > p.open && c.open >= p.close && c.close <= p.open) {
+      patterns.push({ time: c.time, pattern: 'Engulfing ↓', color: '#ef5350', shape: 'arrowDown', position: 'aboveBar' });
+      continue;
+    }
+    // Morning Star – down candle, small body, then green reversal past midpoint
+    if (pp.close < pp.open && Math.abs(p.close - p.open) < (p.high - p.low) * 0.35 && isGreen && c.close > (pp.open + pp.close) / 2) {
+      patterns.push({ time: c.time, pattern: 'Morning Star', color: '#26a69a', shape: 'arrowUp', position: 'belowBar' });
+      continue;
+    }
+    // Evening Star – up candle, small body, then red reversal past midpoint
+    if (pp.close > pp.open && Math.abs(p.close - p.open) < (p.high - p.low) * 0.35 && isRed && c.close < (pp.open + pp.close) / 2) {
+      patterns.push({ time: c.time, pattern: 'Evening Star', color: '#ef5350', shape: 'arrowDown', position: 'aboveBar' });
+      continue;
+    }
+    // Spinning Top – small body, wicks on both sides
+    if (body / range < 0.25 && upperWick > body && lowerWick > body) {
+      patterns.push({ time: c.time, pattern: 'Spinning Top', color: '#d4a843', shape: 'circle', position: 'belowBar' });
+    }
+  }
+  return patterns;
+}

@@ -1,5 +1,5 @@
 import React from "react";
-import { TrendingUp, TrendingDown, DollarSign, Briefcase, Percent, BarChart3 } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Briefcase } from "lucide-react";
 
 // Helper: format amount with currency symbol based on market mix
 const fmt = (amount, currency) =>

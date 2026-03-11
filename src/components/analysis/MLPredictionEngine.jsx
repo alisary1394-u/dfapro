@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Brain, TrendingUp, TrendingDown, Target, Shield, Zap, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Brain, Shield, Zap, AlertTriangle } from "lucide-react";
 
 // ─────────────────────────────────────────────
 // ML Helpers (pure JS, no external libs)

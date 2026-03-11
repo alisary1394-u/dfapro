@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { entities } from "@/api/entities";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, X, MoreVertical, Trash2, Edit2 } from "lucide-react";
+import { Plus, X } from "lucide-react";
 
 const colorMap = {
   gold: "bg-[#d4a843]",

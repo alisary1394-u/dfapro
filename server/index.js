@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import jwt from 'jsonwebtoken';
 import { Low } from 'lowdb';
@@ -19,9 +20,15 @@ const dataDir = path.join(rootDir, 'data');
 const dbPath = path.join(dataDir, 'auth.json');
 const distDir = path.join(rootDir, 'dist');
 const port = Number(process.env.PORT || 8080);
-const jwtSecret = process.env.JWT_SECRET || 'change-this-secret-in-production';
+const DEFAULT_JWT_SECRET = 'change-this-secret-in-production';
+const jwtSecret = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
 const appUrl = process.env.APP_URL || `http://localhost:${port}`;
 const isProduction = process.env.NODE_ENV === 'production';
+
+if (isProduction && jwtSecret === DEFAULT_JWT_SECRET) {
+  console.error('[SECURITY] JWT_SECRET is using the insecure default value. Set JWT_SECRET in your environment variables before deploying to production.');
+  process.exit(1);
+}
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const adminEmail = normalizeEmail(process.env.ADMIN_EMAIL || 'admin@dfapro.com');
 const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123456';
@@ -43,13 +50,31 @@ const app = express();
 app.use(express.json());
 app.use(cookieParser());
 
-// CORS - allow requests from GitHub Pages and any origin
+// CORS - restrict to the configured app origin
+// Requests without an Origin header come from non-browser clients (e.g. curl) or
+// same-origin page navigations; browsers always set Origin on cross-origin requests,
+// so not setting ACAO here is safe and prevents unintended cross-origin access.
+const allowedOrigin = appUrl.replace(/\/$/, '');
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (origin && origin === allowedOrigin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  // If origin is absent (same-origin / non-browser), no CORS headers are needed.
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
+});
+
+// Rate limiter for authentication endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many requests, please try again later.' },
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -89,6 +114,7 @@ const yfFetch = async (url) => {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': 'application/json',
     },
+    signal: AbortSignal.timeout(10_000), // 10-second timeout
   });
   if (!res.ok) throw new Error(`Yahoo Finance ${res.status}`);
   return res.json();
@@ -590,7 +616,13 @@ const sendVerificationEmail = async (user, token) => {
   const transporter = getTransporter();
 
   if (!transporter) {
-    console.log(`Verification link for ${user.email}: ${verifyUrl}`);
+    if (isProduction) {
+      // SMTP not configured in production — email verification will not work.
+      // Set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables to enable it.
+      console.warn('[WARN] SMTP is not configured. Verification emails will not be sent.');
+    } else {
+      console.log('[Dev] Verification email skipped — configure SMTP_HOST, SMTP_USER, and SMTP_PASS to enable email sending.');
+    }
     return { previewUrl: verifyUrl, sent: false };
   }
 
@@ -879,13 +911,26 @@ app.get('/api/auth/me', authRequired, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   const name = String(req.body?.name || '').trim();
   const email = normalizeEmail(req.body?.email);
   const password = String(req.body?.password || '');
 
-  if (!name || !email || password.length < 6) {
-    return res.status(400).json({ message: 'Invalid registration data' });
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!name) {
+    return res.status(400).json({ message: 'Name is required' });
+  }
+  if (!email || !emailRegex.test(email)) {
+    return res.status(400).json({ message: 'A valid email address is required' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ message: 'Password must be at least 8 characters long' });
+  }
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasLowercase = /[a-z]/.test(password);
+  const hasDigit = /[0-9]/.test(password);
+  if (!hasUppercase || !hasLowercase || !hasDigit) {
+    return res.status(400).json({ message: 'Password must contain uppercase letters, lowercase letters, and numbers' });
   }
 
   const exists = db.data.users.find((user) => user.email === email);
@@ -921,8 +966,10 @@ app.post('/api/auth/register', async (req, res) => {
   });
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email);
+  // Note: password complexity is only enforced at registration, not login.
+  // This ensures existing accounts created before stricter rules can still sign in.
   const password = String(req.body?.password || '');
   const user = db.data.users.find((item) => item.email === email);
 

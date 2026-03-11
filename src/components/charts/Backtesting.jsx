@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar } from "recharts";
-import { FlaskConical, TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, XCircle, Activity, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { FlaskConical, AlertTriangle, CheckCircle2, XCircle, Activity, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 
 // ─── Generate historical OHLCV data ───────────────────────────────────────────
 const generateHistoricalData = (bars, basePrice, volatility) => {

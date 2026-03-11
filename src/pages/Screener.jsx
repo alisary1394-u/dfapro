@@ -5,8 +5,8 @@ import ScreenerAlertCard from "@/components/screener/ScreenerAlertCard";
 import ScreenerTable from "@/components/screener/ScreenerTable";
 import ScreenerFilters from "@/components/screener/ScreenerFilters";
 import {
-  Radar, Play, Pause, Zap, TrendingUp, TrendingDown,
-  Bell, BellOff, RefreshCw, Activity, Filter, BarChart2
+  Radar, Play, Pause, Zap,
+  Bell, BellOff, RefreshCw
 } from "lucide-react";
 
 // ========== Stock universe ==========

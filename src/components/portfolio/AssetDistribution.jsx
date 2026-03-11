@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
-import { PieChart as PieIcon, BarChart3 } from "lucide-react";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 const COLORS = ["#d4a843", "#10b981", "#3b82f6", "#8b5cf6", "#06b6d4", "#f43f5e", "#f97316", "#84cc16", "#a855f7", "#14b8a6"];
 

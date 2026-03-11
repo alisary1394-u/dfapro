@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { TrendingUp, Search, Loader2, Target, BarChart3, Activity, AlertCircle, ChevronDown, ChevronUp, X } from "lucide-react";
+import { TrendingUp, Search, Loader2, BarChart3, Activity, AlertCircle, X } from "lucide-react";
 
 const POPULAR_STOCKS = [
   { symbol: "AAPL", name: "Apple" }, { symbol: "TSLA", name: "Tesla" }, { symbol: "NVDA", name: "NVIDIA" },
