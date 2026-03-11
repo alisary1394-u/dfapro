@@ -127,6 +127,11 @@ export const AuthProvider = ({ children }) => {
     window.location.assign('/login');
   };
 
+  // Initialize: check auth state on mount
+  useEffect(() => {
+    checkAppState();
+  }, []);
+
   return (
     <AuthContext.Provider value={{ 
       user, 
