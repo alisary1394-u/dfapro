@@ -88,6 +88,15 @@
 }
 
 /* Hide lightweight-charts TradingView attribution logo */
-#tv-attr-logo {
+#tv-attr-logo,
+a[href*="tradingview"],
+[id*="tv-attr"] {
   display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  overflow: hidden !important;
 }
