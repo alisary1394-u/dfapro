@@ -42,7 +42,7 @@ import {
 } from "lucide-react";
 import {
   calcEMA, calcSMA, calcRSI, calcMACD, calcBollingerBands,
-  calcStochastic, toHeikinAshi
+  calcStochastic, toHeikinAshi, calcATR, detectPatterns,
 } from "@/components/charts/indicatorUtils";
 
 // ═══════════════════════════════════════════════════════════════
@@ -588,20 +588,133 @@ function AiPanel({ symbol, market, candles, onClose }) {
   const analyze = async () => {
     setLoading(true);
     setResult(null);
-    const last30 = candles.slice(-30);
-    const prices = last30.map(c => c.close);
-    const high = Math.max(...last30.map(c => c.high));
-    const low = Math.min(...last30.map(c => c.low));
-    const latest = candles[candles.length - 1];
-    const rsiData = calcRSI(candles, 14);
-    const rsiValue = rsiData.length > 0 ? rsiData[rsiData.length - 1].value : null;
-    const macdResult = calcMACD(candles);
-    const lastMacd = macdResult.macdLine.length > 0 ? macdResult.macdLine[macdResult.macdLine.length - 1].value : null;
 
     try {
-      setResult({ _unavailable: true });
+      if (candles.length < 30) {
+        setResult({ _unavailable: true });
+        setLoading(false);
+        return;
+      }
+
+      const last    = candles[candles.length - 1];
+      const last30  = candles.slice(-30);
+      const last60  = candles.slice(-60);
+
+      // ── Indicators ──────────────────────────────────
+      const rsiData   = calcRSI(candles, 14);
+      const rsiVal    = rsiData.length > 0 ? rsiData[rsiData.length - 1].value : 50;
+
+      const { macdLine, signalLine } = calcMACD(candles);
+      const lastMacd   = macdLine[macdLine.length - 1]?.value   ?? 0;
+      const lastSignal = signalLine[signalLine.length - 1]?.value ?? 0;
+
+      const ema20Data = calcEMA(candles, 20);
+      const sma50Data = calcSMA(candles, 50);
+      const ema20Val  = ema20Data[ema20Data.length - 1]?.value ?? last.close;
+      const sma50Val  = sma50Data[sma50Data.length - 1]?.value ?? last.close;
+
+      const bbData    = calcBollingerBands(candles, 20, 2);
+      const bbUpper   = bbData.upper[bbData.upper.length - 1]?.value ?? last.close;
+      const bbLower   = bbData.lower[bbData.lower.length - 1]?.value ?? last.close;
+      const bbMiddle  = bbData.middle[bbData.middle.length - 1]?.value ?? last.close;
+      const bbRange   = bbUpper - bbLower;
+      const bbPos     = bbRange > 0 ? (last.close - bbLower) / bbRange : 0.5;
+
+      const atrData   = calcATR(candles, 14);
+      const atrVal    = atrData[atrData.length - 1]?.value ?? 0;
+
+      // ── Volume ──────────────────────────────────────
+      const avgVol   = last30.reduce((s, c) => s + (c.volume || 0), 0) / last30.length;
+      const volRatio = last.volume > 0 && avgVol > 0 ? last.volume / avgVol : 1;
+
+      // ── Support / Resistance (pivot swing) ──────────
+      const highs30    = last30.map(c => c.high);
+      const lows30     = last30.map(c => c.low);
+      const resistance = Math.max(...highs30);
+      const support    = Math.min(...lows30);
+
+      // ── Trend ───────────────────────────────────────
+      const aboveEma20 = last.close > ema20Val;
+      const aboveSma50 = last.close > sma50Val;
+      const ema20AboveSma50 = ema20Val > sma50Val;
+
+      let trendAr;
+      if (aboveEma20 && aboveSma50 && ema20AboveSma50)        trendAr = 'اتجاه صاعد قوي';
+      else if (aboveEma20 && aboveSma50)                       trendAr = 'اتجاه صاعد';
+      else if (!aboveEma20 && !aboveSma50 && !ema20AboveSma50) trendAr = 'اتجاه هابط قوي';
+      else if (!aboveEma20 && !aboveSma50)                     trendAr = 'اتجاه هابط';
+      else                                                      trendAr = 'عرضي / تجميع';
+
+      // ── Signal Scoring (+1 bullish, -1 bearish) ─────
+      let score = 0;
+      const signals = [];
+
+      // RSI
+      if (rsiVal < 30)       { score += 1;   signals.push({ name: 'RSI', signal: 'شراء',   color: '#26a69a', val: rsiVal.toFixed(0) }); }
+      else if (rsiVal > 70)  { score -= 1;   signals.push({ name: 'RSI', signal: 'بيع',    color: '#ef5350', val: rsiVal.toFixed(0) }); }
+      else if (rsiVal < 45)  { score += 0.5; signals.push({ name: 'RSI', signal: 'محايد ↑', color: '#d4a843', val: rsiVal.toFixed(0) }); }
+      else if (rsiVal > 55)  { score -= 0.5; signals.push({ name: 'RSI', signal: 'محايد ↓', color: '#d4a843', val: rsiVal.toFixed(0) }); }
+      else                                   signals.push({ name: 'RSI', signal: 'محايد',  color: '#787b86', val: rsiVal.toFixed(0) });
+
+      // MACD crossover
+      if (lastMacd > lastSignal)  { score += 1;  signals.push({ name: 'MACD', signal: 'صاعد ↑', color: '#26a69a', val: lastMacd.toFixed(3) }); }
+      else                        { score -= 1;  signals.push({ name: 'MACD', signal: 'هابط ↓', color: '#ef5350', val: lastMacd.toFixed(3) }); }
+
+      // Moving Averages
+      if (aboveEma20 && aboveSma50)        { score += 1; signals.push({ name: 'MA', signal: 'فوق MAs ↑', color: '#26a69a', val: '' }); }
+      else if (!aboveEma20 && !aboveSma50) { score -= 1; signals.push({ name: 'MA', signal: 'تحت MAs ↓', color: '#ef5350', val: '' }); }
+      else                                              signals.push({ name: 'MA', signal: 'محايد',     color: '#d4a843', val: '' });
+
+      // Bollinger Bands position
+      if (bbPos < 0.2)       { score += 0.5; signals.push({ name: 'BB', signal: 'قرب الدعم ↑',    color: '#26a69a', val: (bbPos * 100).toFixed(0) + '%' }); }
+      else if (bbPos > 0.8)  { score -= 0.5; signals.push({ name: 'BB', signal: 'قرب المقاومة ↓', color: '#ef5350', val: (bbPos * 100).toFixed(0) + '%' }); }
+      else                                   signals.push({ name: 'BB', signal: 'وسط النطاق',      color: '#787b86', val: (bbPos * 100).toFixed(0) + '%' });
+
+      // Volume confirmation
+      if (volRatio > 1.5)      signals.push({ name: 'حجم', signal: '×' + volRatio.toFixed(1) + ' مرتفع', color: '#2962ff', val: '' });
+      else if (volRatio < 0.5) signals.push({ name: 'حجم', signal: 'منخفض',                              color: '#787b86', val: '' });
+      else                     signals.push({ name: 'حجم', signal: 'طبيعي',                              color: '#434651', val: '' });
+
+      // ── Recommendation ──────────────────────────────
+      let recommendation;
+      if (score >= 2.5)       recommendation = 'شراء قوي';
+      else if (score >= 1)    recommendation = 'شراء';
+      else if (score <= -2.5) recommendation = 'بيع قوي';
+      else if (score <= -1)   recommendation = 'بيع';
+      else                    recommendation = 'محايد / انتظار';
+
+      // ── Entry / Exit / Stop ─────────────────────────
+      const entry    = (aboveEma20 && aboveSma50) ? parseFloat((bbMiddle * 0.996).toFixed(2)) : null;
+      const exit     = entry ? parseFloat((entry + atrVal * 2.0).toFixed(2))  : null;
+      const stopLoss = parseFloat((last.close - atrVal * 1.5).toFixed(2));
+
+      // ── Risk ────────────────────────────────────────
+      const volatilityPct = atrVal > 0 && last.close > 0 ? (atrVal / last.close) * 100 : 0;
+      const riskLevel = volatilityPct > 3 ? 'عالي' : volatilityPct > 1.5 ? 'متوسط' : 'منخفض';
+
+      // ── Confidence ──────────────────────────────────
+      const confidence = Math.min(92, Math.max(35, Math.abs(score) * 18 + 40));
+
+      setResult({
+        recommendation,
+        trend: trendAr,
+        trend_reason: `EMA20: ${ema20Val.toFixed(2)} | SMA50: ${sma50Val.toFixed(2)} | السعر ${aboveEma20 ? 'فوق' : 'تحت'} EMA20`,
+        support,
+        resistance,
+        entry_point: entry,
+        exit_point:  exit,
+        stop_loss:   stopLoss,
+        risk_level:  riskLevel,
+        momentum:    rsiVal < 40 ? 'ضعيف' : rsiVal > 60 ? 'قوي' : 'متعادل',
+        confidence:  Math.round(confidence),
+        atr:         atrVal.toFixed(2),
+        rsi:         rsiVal.toFixed(1),
+        signals,
+        score:       parseFloat(score.toFixed(1)),
+      });
     } catch (err) {
-      console.error(err);
+      console.error('[AI Analysis]', err);
+      setResult({ _unavailable: true });
     }
     setLoading(false);
   };
@@ -633,12 +746,15 @@ function AiPanel({ symbol, market, candles, onClose }) {
           </div>
         ) : result ? (
           <>
+            {/* Score gauge */}
             <div className="flex items-center justify-between bg-[#0c0e14] rounded-lg p-2.5">
               <span className="text-[10px] text-[#787b86]">التوصية</span>
               <span className="text-sm font-black px-3 py-0.5 rounded-full" style={{ color: recColor, backgroundColor: `${recColor}15`, border: `1px solid ${recColor}40` }}>
                 {result.recommendation}
               </span>
             </div>
+
+            {/* Trend */}
             <div className="bg-[#0c0e14] rounded-lg p-2.5">
               <div className="flex justify-between mb-1">
                 <span className="text-[10px] text-[#787b86]">الاتجاه</span>
@@ -646,6 +762,26 @@ function AiPanel({ symbol, market, candles, onClose }) {
               </div>
               {result.trend_reason && <p className="text-[9px] text-[#787b86] leading-relaxed">{result.trend_reason}</p>}
             </div>
+
+            {/* Signals table */}
+            {result.signals?.length > 0 && (
+              <div className="bg-[#0c0e14] rounded-lg overflow-hidden">
+                <div className="px-2.5 py-1.5 border-b border-[#1e222d]">
+                  <span className="text-[9px] font-bold text-[#787b86] tracking-wider uppercase">إشارات المؤشرات</span>
+                </div>
+                {result.signals.map((s, i) => (
+                  <div key={i} className="flex items-center justify-between px-2.5 py-1.5 border-b border-[#1e222d]/60 last:border-0">
+                    <span className="text-[10px] text-[#787b86] w-10 shrink-0">{s.name}</span>
+                    <div className="flex items-center gap-1">
+                      {s.val && <span className="text-[9px] font-mono text-[#434651]">{s.val}</span>}
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ color: s.color, backgroundColor: s.color + '18' }}>{s.signal}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Key levels */}
             <div className="grid grid-cols-2 gap-1.5">
               <div className="bg-[#26a69a]/10 border border-[#26a69a]/20 rounded-lg p-2 text-center">
                 <p className="text-[8px] text-[#787b86]">دعم</p>
@@ -657,17 +793,30 @@ function AiPanel({ symbol, market, candles, onClose }) {
               </div>
               {result.entry_point && (
                 <div className="bg-[#2962ff]/10 border border-[#2962ff]/20 rounded-lg p-2 text-center">
-                  <p className="text-[8px] text-[#787b86]">نقطة الدخول</p>
+                  <p className="text-[8px] text-[#787b86]">دخول مقترح</p>
                   <p className="text-xs font-bold text-[#2962ff]">{result.entry_point?.toFixed(2)}</p>
                 </div>
               )}
               {result.exit_point && (
                 <div className="bg-[#7b2ff7]/10 border border-[#7b2ff7]/20 rounded-lg p-2 text-center">
-                  <p className="text-[8px] text-[#787b86]">نقطة الخروج</p>
+                  <p className="text-[8px] text-[#787b86]">هدف الربح</p>
                   <p className="text-xs font-bold text-[#7b2ff7]">{result.exit_point?.toFixed(2)}</p>
                 </div>
               )}
+              {result.stop_loss && (
+                <div className="bg-[#ef5350]/10 border border-[#ef5350]/20 rounded-lg p-2 text-center col-span-1">
+                  <p className="text-[8px] text-[#787b86]">وقف الخسارة</p>
+                  <p className="text-xs font-bold text-[#ef5350]">{result.stop_loss?.toFixed(2)}</p>
+                </div>
+              )}
+              {result.atr && (
+                <div className="bg-[#ff9800]/10 border border-[#ff9800]/20 rounded-lg p-2 text-center">
+                  <p className="text-[8px] text-[#787b86]">ATR (14)</p>
+                  <p className="text-xs font-bold text-[#ff9800]">{result.atr}</p>
+                </div>
+              )}
             </div>
+
             <div className="flex gap-1.5">
               {result.momentum && (
                 <div className="flex-1 bg-[#0c0e14] rounded-lg p-2 text-center">
@@ -682,6 +831,7 @@ function AiPanel({ symbol, market, candles, onClose }) {
                 </div>
               )}
             </div>
+
             {result.confidence != null && (
               <div className="bg-[#0c0e14] rounded-lg p-2">
                 <div className="flex justify-between mb-1">
@@ -693,11 +843,7 @@ function AiPanel({ symbol, market, candles, onClose }) {
                 </div>
               </div>
             )}
-            {result.note && (
-              <div className="bg-[#d4a843]/5 border border-[#d4a843]/15 rounded-lg p-2">
-                <p className="text-[10px] text-[#d1d4dc] leading-relaxed">💡 {result.note}</p>
-              </div>
-            )}
+
             <button onClick={analyze} className="w-full py-2 text-[10px] font-bold text-[#d4a843] border border-[#d4a843]/30 rounded-lg hover:bg-[#d4a843]/10 transition-all flex items-center justify-center gap-1.5">
               <RefreshCw className="w-3 h-3" /> إعادة التحليل
             </button>
@@ -805,6 +951,11 @@ function IndicatorMenu({ overlays, setOverlays, subs, setSubs, onClose }) {
         <p className="text-[9px] text-[#787b86] font-bold mb-1 px-2 tracking-wider uppercase">الحجم</p>
         <Toggle label="حجم التداول" color="#434651" enabled={overlays.volume.enabled} onToggle={() => toggleOverlay("volume")} />
       </div>
+      <div className="p-2 border-t border-[#2a2e39] space-y-0.5">
+        <p className="text-[9px] text-[#787b86] font-bold mb-1 px-2 tracking-wider uppercase">أدوات المحلل</p>
+        <Toggle label="نماذج الشموع" color="#ffeb3b" enabled={overlays.patterns.enabled} onToggle={() => toggleOverlay("patterns")} />
+        <Toggle label="دعم / مقاومة تلقائي" color="#26a69a" enabled={overlays.sr.enabled} onToggle={() => toggleOverlay("sr")} />
+      </div>
     </div>
   );
 }
@@ -849,7 +1000,7 @@ function StockRow({ stock, market, isActive, onSelect }) {
 // ═══════════════════════════════════════════════════════════════
 // RIGHT SIDEBAR (Watchlist + Stock Details)
 // ═══════════════════════════════════════════════════════════════
-function RightSidebar({ market, selectedStock, onSelect, quote, candles, search, setSearch, handleSelectMarket }) {
+function RightSidebar({ market, selectedStock, onSelect, quote, candles, search, setSearch, handleSelectMarket, techScore }) {
   const [tab, setTab] = useState("watchlist");
   const [expanded, setExpanded] = useState(null);
 
@@ -896,6 +1047,10 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
           className={`flex-1 py-1.5 text-[10px] font-bold transition-all ${tab === "details" ? "text-[#d1d4dc] border-b border-b-[#d1d4dc]" : "text-[#787b86]"}`}>
           تفاصيل
         </button>
+        <button onClick={() => setTab("analysis")}
+          className={`flex-1 py-1.5 text-[10px] font-bold transition-all ${tab === "analysis" ? "text-[#d4a843] border-b border-b-[#d4a843]" : "text-[#787b86]"}`}>
+          تحليل
+        </button>
       </div>
 
       {tab === "watchlist" ? (
@@ -930,7 +1085,7 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
             ))}
           </div>
         </>
-      ) : (
+      ) : tab === "details" ? (
         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3" dir="rtl">
           {/* Stock header */}
           <div className="text-center space-y-1">
@@ -1012,7 +1167,135 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
             ))}
           </div>
         </div>
-      )}
+      ) : tab === "analysis" ? (
+        /* ── Technical Analysis Tab ── */
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3" dir="rtl">
+          {!techScore ? (
+            <div className="flex flex-col items-center justify-center h-32 gap-2">
+              <span className="text-[11px] text-[#434651]">بيانات غير كافية للتحليل</span>
+            </div>
+          ) : (
+            <>
+              {/* Overall Score */}
+              <div className="rounded-xl p-3 border" style={{ backgroundColor: techScore.recCol + '12', borderColor: techScore.recCol + '35' }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[9px] text-[#787b86] mb-0.5">التقييم الفني</p>
+                    <p className="text-xl font-black" style={{ color: techScore.recCol }}>{techScore.rec}</p>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-[9px] text-[#787b86]">النقاط</p>
+                    <p className="text-2xl font-black" style={{ color: techScore.recCol }}>{techScore.score > 0 ? '+' : ''}{techScore.score}</p>
+                  </div>
+                </div>
+                {/* Score bar */}
+                <div className="mt-2 h-2 bg-[#2a2e39] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(100, Math.abs(techScore.score) / 3.5 * 100)}%`,
+                      marginLeft: techScore.score < 0 ? 'auto' : undefined,
+                      background: `linear-gradient(90deg, ${techScore.recCol}88, ${techScore.recCol})`,
+                    }} />
+                </div>
+              </div>
+
+              {/* Quick indicator values */}
+              <div className="space-y-0 bg-[#0c0e14] rounded-xl overflow-hidden border border-[#1e222d]">
+                <div className="px-3 py-2 bg-[#1e222d]/60 border-b border-[#2a2e39]">
+                  <span className="text-[9px] font-bold text-[#787b86] tracking-wider uppercase">قيم المؤشرات الحالية</span>
+                </div>
+                {[
+                  { label: 'RSI (14)', value: techScore.rsi, color: parseFloat(techScore.rsi) < 30 ? '#26a69a' : parseFloat(techScore.rsi) > 70 ? '#ef5350' : '#d1d4dc' },
+                  { label: 'ATR (14)', value: techScore.atr, color: '#ff9800' },
+                  { label: 'السعر', value: candles[candles.length - 1]?.close?.toFixed(2) || '-', color: '#d1d4dc' },
+                  { label: 'حجم التداول', value: formatVol(candles[candles.length - 1]?.volume), color: '#2962ff' },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center justify-between px-3 py-2 border-b border-[#1e222d]/70 last:border-0">
+                    <span className="text-[10px] text-[#787b86]">{item.label}</span>
+                    <span className="text-[11px] font-bold font-mono" style={{ color: item.color }}>{item.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Volume Profile mini chart */}
+              {candles.length >= 20 && (() => {
+                const last50 = candles.slice(-50);
+                const priceMin = Math.min(...last50.map(c => c.low));
+                const priceMax = Math.max(...last50.map(c => c.high));
+                const buckets = 12;
+                const step = (priceMax - priceMin) / buckets;
+                const bins = Array.from({ length: buckets }, (_, i) => ({
+                  low: priceMin + i * step,
+                  high: priceMin + (i + 1) * step,
+                  vol: 0,
+                }));
+                last50.forEach(c => {
+                  const idx = Math.min(buckets - 1, Math.floor((c.close - priceMin) / step));
+                  if (idx >= 0) bins[idx].vol += (c.volume || 1);
+                });
+                const maxVol = Math.max(...bins.map(b => b.vol));
+                const currentPrice = candles[candles.length - 1]?.close ?? 0;
+                return (
+                  <div className="bg-[#0c0e14] rounded-xl overflow-hidden border border-[#1e222d]">
+                    <div className="px-3 py-2 bg-[#1e222d]/60 border-b border-[#2a2e39]">
+                      <span className="text-[9px] font-bold text-[#787b86] tracking-wider uppercase">توزيع الحجم السعري (VPVR)</span>
+                    </div>
+                    <div className="p-2 space-y-[1px]">
+                      {[...bins].reverse().map((bin, i) => {
+                        const widthPct = maxVol > 0 ? (bin.vol / maxVol) * 100 : 0;
+                        const isCurrent = currentPrice >= bin.low && currentPrice < bin.high;
+                        const isPOC = bin.vol === maxVol;
+                        return (
+                          <div key={i} className="flex items-center gap-1.5">
+                            <span className="text-[8px] text-[#434651] font-mono w-10 shrink-0 text-right">{bin.high.toFixed(1)}</span>
+                            <div className="flex-1 h-3 bg-[#1e222d] rounded-sm overflow-hidden relative">
+                              <div className="h-full rounded-sm transition-all" style={{
+                                width: `${widthPct}%`,
+                                backgroundColor: isPOC ? '#d4a843' : isCurrent ? '#2962ff' : '#2a2e39',
+                              }} />
+                              {(isCurrent || isPOC) && (
+                                <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[7px] font-bold" style={{ color: isPOC ? '#d4a843' : '#2962ff' }}>
+                                  {isPOC ? 'POC' : '◄'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="px-3 py-1.5 border-t border-[#1e222d] flex items-center gap-3 text-[8px] text-[#434651]">
+                      <span style={{ color: '#d4a843' }}>● POC (أعلى حجم)</span>
+                      <span style={{ color: '#2962ff' }}>◄ السعر الحالي</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Last detected patterns */}
+              {(() => {
+                const pats = detectPatterns(candles.slice(-30));
+                if (pats.length === 0) return null;
+                const recent = pats.slice(-5).reverse();
+                return (
+                  <div className="bg-[#0c0e14] rounded-xl overflow-hidden border border-[#1e222d]">
+                    <div className="px-3 py-2 bg-[#1e222d]/60 border-b border-[#2a2e39]">
+                      <span className="text-[9px] font-bold text-[#787b86] tracking-wider uppercase">آخر النماذج المكتشفة</span>
+                    </div>
+                    {recent.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-2 border-b border-[#1e222d]/70 last:border-0">
+                        <span className="text-[10px] font-bold" style={{ color: p.color }}>{p.pattern}</span>
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded" style={{ color: p.color, backgroundColor: p.color + '20' }}>
+                          {p.position === 'belowBar' ? '↑ صاعد' : '↓ هابط'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1056,22 +1339,27 @@ export default function ChartBoard() {
 
   // Overlays
   const [overlays, setOverlays] = useState({
-    ema9: { enabled: false, period: 9, color: "#26a69a" },
-    ema20: { enabled: true, period: 20, color: "#f59e0b" },
-    sma50: { enabled: true, period: 50, color: "#2962ff" },
-    sma200: { enabled: false, period: 200, color: "#ff9800" },
-    bb: { enabled: false, period: 20, multiplier: 2, color: "#9c27b0" },
-    vwap: { enabled: false, color: "#00bcd4" },
+    ema9:     { enabled: false, period: 9,   color: "#26a69a" },
+    ema20:    { enabled: true,  period: 20,  color: "#f59e0b" },
+    sma50:    { enabled: true,  period: 50,  color: "#2962ff" },
+    sma200:   { enabled: false, period: 200, color: "#ff9800" },
+    bb:       { enabled: false, period: 20, multiplier: 2, color: "#9c27b0" },
+    vwap:     { enabled: false, color: "#00bcd4" },
     ichimoku: { enabled: false, color: "#7b2ff7" },
-    volume: { enabled: true },
+    volume:   { enabled: true },
+    patterns: { enabled: true },  // candlestick pattern markers
+    sr:       { enabled: true },  // auto support/resistance lines
   });
 
   // Sub-panels
   const [subs, setSubs] = useState({
-    rsi: { enabled: false, period: 14 },
-    macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
+    rsi:        { enabled: false, period: 14 },
+    macd:       { enabled: false, fast: 12, slow: 26, signal: 9 },
     stochastic: { enabled: false, kPeriod: 14, dPeriod: 3 },
   });
+
+  // Live technical score (computed whenever candles change)
+  const [techScore, setTechScore] = useState(null); // { score, rec, recColor, rsi, atr }
 
   // Chart refs
   const mainContainerRef = useRef(null);
@@ -1140,6 +1428,35 @@ export default function ChartBoard() {
     }, 30000);
     return () => clearInterval(iv);
   }, [ibkrState.connected]);
+
+  // ── Compute live technical score whenever candles change ──
+  useEffect(() => {
+    if (candles.length < 30) { setTechScore(null); return; }
+    try {
+      const last  = candles[candles.length - 1];
+      const rsiD  = calcRSI(candles, 14);
+      const rsiV  = rsiD[rsiD.length - 1]?.value ?? 50;
+      const { macdLine: ml, signalLine: sl } = calcMACD(candles);
+      const macdV = (ml[ml.length - 1]?.value ?? 0) - (sl[sl.length - 1]?.value ?? 0);
+      const ema20 = calcEMA(candles, 20)[calcEMA(candles, 20).length - 1]?.value ?? last.close;
+      const sma50 = calcSMA(candles, 50)[calcSMA(candles, 50).length - 1]?.value ?? last.close;
+      const atrD  = calcATR(candles, 14);
+      const atrV  = atrD[atrD.length - 1]?.value ?? 0;
+      let sc = 0;
+      if (rsiV < 30) sc += 1; else if (rsiV > 70) sc -= 1;
+      else if (rsiV < 45) sc += 0.5; else if (rsiV > 55) sc -= 0.5;
+      if (macdV > 0) sc += 1; else sc -= 1;
+      if (last.close > ema20 && last.close > sma50) sc += 1;
+      else if (last.close < ema20 && last.close < sma50) sc -= 1;
+      let rec, recCol;
+      if (sc >= 2)       { rec = 'شراء';  recCol = '#26a69a'; }
+      else if (sc >= 1)  { rec = 'شراء ↑'; recCol = '#26a69a'; }
+      else if (sc <= -2) { rec = 'بيع';   recCol = '#ef5350'; }
+      else if (sc <= -1) { rec = 'بيع ↓'; recCol = '#ef5350'; }
+      else               { rec = 'محايد';  recCol = '#d4a843'; }
+      setTechScore({ score: sc, rec, recCol, rsi: rsiV.toFixed(1), atr: atrV.toFixed(2) });
+    } catch { setTechScore(null); }
+  }, [candles]);
 
   // ── Resolve symbol to IBKR conid ──
   const resolveConid = useCallback(async (symbol) => {
@@ -1518,6 +1835,62 @@ export default function ChartBoard() {
       });
 
       chart.timeScale().fitContent();
+
+      // ── Candlestick Pattern Markers ──────────────────
+      if (overlays.patterns?.enabled && mainSeries && (chartType === 'candlestick' || chartType === 'heikinashi')) {
+        const rawPatterns = detectPatterns(candles);
+        // Only show last 40 patterns to keep the chart readable
+        const recentPatterns = rawPatterns.slice(-40);
+        if (recentPatterns.length > 0) {
+          const markers = recentPatterns.map(p => ({
+            time: p.time,
+            position: p.position,
+            color: p.color,
+            shape: p.shape,
+            text: p.pattern,
+            size: 0.8,
+          }));
+          try { mainSeries.setMarkers(markers); } catch (_) {}
+        }
+      }
+
+      // ── Auto Pivot Support / Resistance Lines ────────
+      if (overlays.sr?.enabled && mainSeries && candles.length >= 10) {
+        const window = 5;
+        const srLevels = new Set();
+        for (let i = window; i < candles.length - window; i++) {
+          const slice = candles.slice(i - window, i + window + 1);
+          // Pivot High
+          if (candles[i].high === Math.max(...slice.map(c => c.high))) {
+            const lvl = parseFloat(candles[i].high.toFixed(2));
+            srLevels.add(`R:${lvl}`);
+          }
+          // Pivot Low
+          if (candles[i].low === Math.min(...slice.map(c => c.low))) {
+            const lvl = parseFloat(candles[i].low.toFixed(2));
+            srLevels.add(`S:${lvl}`);
+          }
+        }
+        // Cluster nearby levels (within 0.5% of each other) and keep most recent
+        const currentPrice = candles[candles.length - 1].close;
+        const range = currentPrice * 0.08; // Show S/R within ±8% of current price
+        srLevels.forEach(entry => {
+          const [type, valStr] = entry.split(':');
+          const val = parseFloat(valStr);
+          if (Math.abs(val - currentPrice) > range) return;
+          try {
+            mainSeries.createPriceLine({
+              price: val,
+              color: type === 'R' ? 'rgba(239,83,80,0.45)' : 'rgba(38,166,154,0.45)',
+              lineWidth: 1,
+              lineStyle: 2, // LineStyle.Dashed
+              axisLabelVisible: true,
+              title: type === 'R' ? 'مقاومة' : 'دعم',
+            });
+          } catch (_) {}
+        });
+      }
+
       mainChartRef.current = chart;
 
       // Sync sub-charts
@@ -1778,6 +2151,11 @@ export default function ChartBoard() {
               <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${isUp ? "text-[#26a69a] bg-[#26a69a]/10" : "text-[#ef5350] bg-[#ef5350]/10"}`}>
                 {isUp ? "+" : ""}{(change || 0).toFixed(2)}%
               </span>
+              {techScore && (
+                <span className="font-black px-2 py-0.5 rounded-full text-[10px] border" style={{ color: techScore.recCol, backgroundColor: techScore.recCol + '18', borderColor: techScore.recCol + '40' }}>
+                  {techScore.rec}
+                </span>
+              )}
             </div>
           )}
 
@@ -1872,6 +2250,8 @@ export default function ChartBoard() {
               {currentBar.low != null && <span className="text-[#787b86]">L <span className="text-[#ef5350] font-medium">{currentBar.low?.toFixed(2)}</span></span>}
               <span className="text-[#787b86]">C <span className={`font-bold ${(currentBar.close || currentBar.value) >= (currentBar.open || 0) ? "text-[#26a69a]" : "text-[#ef5350]"}`}>{currentBar.close?.toFixed(2) || currentBar.value?.toFixed(2)}</span></span>
               {currentBar.volume > 0 && <span className="text-[#787b86]">V <span className="text-[#787b86]">{formatVol(currentBar.volume)}</span></span>}
+              {techScore?.rsi && <span className="text-[#787b86]">RSI <span className="text-[#7b2ff7] font-mono">{techScore.rsi}</span></span>}
+              {techScore?.atr && <span className="text-[#787b86]">ATR <span className="text-[#ff9800] font-mono">{techScore.atr}</span></span>}
             </div>
           )}
 
@@ -1945,6 +2325,7 @@ export default function ChartBoard() {
           search={search}
           setSearch={setSearch}
           handleSelectMarket={handleSelectMarket}
+          techScore={techScore}
         />
       )}
     </div>
