@@ -973,12 +973,24 @@ app.patch('/api/auth/me', authRequired, async (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
-app.use(express.static(distDir));
+app.use(express.static(distDir, {
+  maxAge: '1y',
+  immutable: true,
+  setHeaders: (res, filePath) => {
+    // HTML files should never be cached (they reference hashed assets)
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 app.get('*', async (req, res, next) => {
   if (req.path.startsWith('/api/')) {
     return next();
   }
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(distDir, 'index.html'));
 });
 
