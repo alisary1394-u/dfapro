@@ -11,7 +11,7 @@ const IBKR_STORAGE_KEY = 'ibkr_config';
 
 const getConfig = () => {
   try {
-    const raw = localStorage.getItem(IBKR_STORAGE_KEY);
+    const raw = sessionStorage.getItem(IBKR_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -19,11 +19,11 @@ const getConfig = () => {
 };
 
 const saveConfig = (config) => {
-  localStorage.setItem(IBKR_STORAGE_KEY, JSON.stringify(config));
+  sessionStorage.setItem(IBKR_STORAGE_KEY, JSON.stringify(config));
 };
 
 const clearConfig = () => {
-  localStorage.removeItem(IBKR_STORAGE_KEY);
+  sessionStorage.removeItem(IBKR_STORAGE_KEY);
 };
 
 // ─── API Helpers ─────────────────────────────────────────────

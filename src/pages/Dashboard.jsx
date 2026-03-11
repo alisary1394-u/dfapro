@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getTopMovers, getForex, getCrypto, getBatchQuotes } from "@/components/api/marketDataClient";
+import { getTopMovers, getForex, getCrypto } from "@/components/api/marketDataClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import MarketOverviewBar from "@/components/ui/MarketOverviewBar";
@@ -10,7 +10,7 @@ import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import { useDashboardLayout } from "@/components/dashboard/useDashboardLayout";
 import {
   TrendingUp, TrendingDown, BarChart3, Activity, Flame, Brain, Sparkles, Target,
-  CalendarDays, Globe2, DollarSign, Bitcoin
+  CalendarDays, DollarSign, Bitcoin
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,

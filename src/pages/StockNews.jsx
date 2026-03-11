@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  Newspaper, TrendingUp, TrendingDown, Minus, Loader2, Search, X,
+  Newspaper, TrendingUp, TrendingDown, Minus, Search, X,
   Brain, Radio, RefreshCw, ChevronDown, ChevronUp, Zap, BarChart3,
   Filter, Clock, ExternalLink, AlertTriangle
 } from "lucide-react";

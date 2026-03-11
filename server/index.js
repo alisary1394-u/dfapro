@@ -113,6 +113,7 @@ const yfFetch = async (url) => {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': 'application/json',
     },
+    signal: AbortSignal.timeout(10_000), // 10-second timeout
   });
   if (!res.ok) throw new Error(`Yahoo Finance ${res.status}`);
   return res.json();
@@ -614,8 +615,11 @@ const sendVerificationEmail = async (user, token) => {
   const transporter = getTransporter();
 
   if (!transporter) {
-    // In development (no SMTP configured), skip sending without logging sensitive data
-    if (!isProduction) {
+    if (isProduction) {
+      // SMTP not configured in production — email verification will not work.
+      // Set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables to enable it.
+      console.warn('[WARN] SMTP is not configured. Verification emails will not be sent.');
+    } else {
       console.log('[Dev] Verification email skipped — configure SMTP_HOST, SMTP_USER, and SMTP_PASS to enable email sending.');
     }
     return { previewUrl: verifyUrl, sent: false };
@@ -963,6 +967,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   const email = normalizeEmail(req.body?.email);
+  // Note: password complexity is only enforced at registration, not login.
+  // This ensures existing accounts created before stricter rules can still sign in.
   const password = String(req.body?.password || '');
   const user = db.data.users.find((item) => item.email === email);
 

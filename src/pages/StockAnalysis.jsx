@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { getQuote, getCandles, getOverview, buildFallbackCandles } from "@/components/api/marketDataClient";
-import { getPollInterval } from "@/lib/brokerState";
 import SearchStock from "@/components/ui/SearchStock";
 import AnalysisGauge from "@/components/ui/AnalysisGauge";
 import SmartAnalysisPanel from "@/components/charts/SmartAnalysisPanel";
@@ -11,13 +10,10 @@ import SupportResistancePanel from "@/components/analysis/SupportResistancePanel
 import MLPredictionEngine from "@/components/analysis/MLPredictionEngine";
 import MultiStockComparison from "@/components/analysis/MultiStockComparison";
 import {
-  Brain, TrendingUp, TrendingDown, BarChart3, Activity,
-  Target, Shield, Zap, ChevronDown, Loader2, Sparkles,
-  DollarSign, Percent, ArrowUpRight, ArrowDownRight, Scale, GitCompare
+  Brain, BarChart3, Shield, Sparkles,
+  DollarSign, ArrowUpRight, ArrowDownRight, GitCompare
 } from "lucide-react";
-import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, RadarChart, Radar, PolarGrid,
+import { ResponsiveContainer, RadarChart, Radar, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis
 } from "recharts";
 

@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell
+  ResponsiveContainer, Tooltip
 } from "recharts";
 
 const COLORS = ["#d4a843", "#3b82f6", "#10b981"];

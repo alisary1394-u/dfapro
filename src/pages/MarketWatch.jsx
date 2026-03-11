@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { getQuote, getBatchQuotes } from "@/components/api/marketDataClient";
 import { getPollInterval } from "@/lib/brokerState";
 import { createPageUrl } from "@/utils";
 import { useNavigate } from "react-router-dom";
 import {
-  Search, RefreshCw, Loader2, Brain, TrendingUp, TrendingDown,
-  ArrowUpRight, ArrowDownRight, Zap, Filter, ChevronUp, ChevronDown,
-  Activity, BarChart3, Star, Eye, Sparkles, Clock, AlertCircle
+  Search, RefreshCw, Loader2, Brain, Zap, ChevronUp, ChevronDown,
+  Activity, Sparkles
 } from "lucide-react";
 
 // ─── Full Saudi & US stock lists ───────────────────────────────────────────

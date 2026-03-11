@@ -1,13 +1,10 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine, ReferenceArea, Area, AreaChart, BarChart, Cell
+  ResponsiveContainer, ReferenceLine, Area, AreaChart, BarChart, Cell
 } from "recharts";
+
 import {
-  TrendingUp, TrendingDown, Settings, Eye, EyeOff, ZoomIn, Maximize2
-} from "lucide-react";
-import {
-  calcOBV, calcAD, calcMFI, calcCMF, calcVSA,
   OBVChart, ADChart, MFIChart, CMFChart, VSAVolumeChart, LiquidityFlowChart
 } from "./SmartIndicators";
 

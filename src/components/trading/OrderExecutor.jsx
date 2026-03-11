@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import {
-  Send, Loader2, AlertCircle, CheckCircle2, X,
+  Send, Loader2, AlertCircle, CheckCircle2,
   TrendingUp, TrendingDown
 } from "lucide-react";
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import StockSidebar from "@/components/layout/StockSidebar";
 import MarketOverviewBar from "@/components/ui/MarketOverviewBar";
@@ -8,8 +8,8 @@ import {
   LayoutDashboard, Brain, Radar, Briefcase, Star, GitCompare,
   Bell, Zap, Menu, X, TrendingUp, Building2, Newspaper,
   Wallet, BarChart3, Activity, ChevronDown, ChevronUp,
-  Sparkles, Shield, LineChart, Target, BookOpen,
-  LogOut, Clock, AlertTriangle
+  Sparkles, Shield, LineChart, Target,
+  LogOut, Clock
 } from "lucide-react";
 
 const navGroups = [

@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { entities } from "@/api/entities";
 import { getQuote } from "@/components/api/marketDataClient";
-import { getPollInterval } from "@/lib/brokerState";
 import AddTradeModal from "@/components/virtualportfolio/AddTradeModal";
 import TradeRow from "@/components/virtualportfolio/TradeRow";
 import {
   Wallet, Plus, TrendingUp, TrendingDown, DollarSign, BarChart3,
-  RefreshCw, Loader2, Activity, PieChart, Filter
+  RefreshCw, Loader2, Activity, PieChart
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,

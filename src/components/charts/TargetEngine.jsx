@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { calcOBV, calcAD, calcMFI, calcCMF, calcVSA, calcVWAP, calcATR, detectCandlePatterns, detectWyckoffPhase } from "./SmartIndicators";
-import { Target, TrendingUp, TrendingDown, Zap, Shield, AlertTriangle, ChevronRight } from "lucide-react";
+import { Target, TrendingUp, TrendingDown, Zap, Shield } from "lucide-react";
 
 // ===== Fibonacci Retracement =====
 const calcFibLevels = (data) => {

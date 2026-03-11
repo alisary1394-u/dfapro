@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import AnalysisGauge from "@/components/ui/AnalysisGauge";
 import {
-  Radar, Search, Loader2, Brain, Sparkles, Filter,
-  TrendingUp, Shield, Zap, Target, ArrowLeft, BarChart3
+  Radar, Sparkles,
+  TrendingUp, Shield, Zap, Target, BarChart3
 } from "lucide-react";
 
 const strategies = [

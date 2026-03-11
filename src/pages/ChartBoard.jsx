@@ -16,7 +16,6 @@ import {
   parseSnapshotToQuote,
   parseHistoryToCandles,
   parseTickUpdate,
-  unsubscribeAll,
 } from "@/components/api/ibkrClient";
 import {
   alpacaConfig,
@@ -27,23 +26,19 @@ import {
   getAlpacaPositions,
   getAlpacaSnapshot,
   getAlpacaBars,
-  searchAlpacaAsset,
   subscribeAlpacaQuotes,
   parseAlpacaQuote,
   parseAlpacaBars,
   parseAlpacaTick,
 } from "@/components/api/alpacaClient";
 import {
-  Search, Brain, RefreshCw, Loader2, BarChart3,
-  ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp, X,
-  Maximize2, Minimize2, Layers, Settings, TrendingUp,
+  Search, Brain, RefreshCw, Loader2, BarChart3, ChevronDown, X,
+  Maximize2, Minimize2, TrendingUp,
   Minus, Circle, Square, Triangle, Hash, Type,
   ArrowRight, Crosshair, MousePointer, Ruler, Percent,
-  PenTool, Move, Trash2, Eye, EyeOff,
-  Magnet, Camera, RotateCcw, ChevronLeft, ChevronRight,
+  PenTool, Trash2, RotateCcw, ChevronLeft, ChevronRight,
   Activity, LineChart, BarChart2,
-  Star, Plus, Volume2, Clock, Calendar, Globe, Info,
-  Link2, Unlink2, Zap, CheckCircle2, AlertCircle, Wifi, WifiOff, Key
+  Link2, Unlink2, Zap, AlertCircle, Wifi, WifiOff, Key
 } from "lucide-react";
 import {
   calcEMA, calcSMA, calcRSI, calcMACD, calcBollingerBands,

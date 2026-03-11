@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   Newspaper, TrendingUp, TrendingDown, Minus, Loader2,
-  Zap, AlertTriangle, CheckCircle2, Radio, MessageSquare, Brain
+  Zap, Radio, MessageSquare, Brain
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 

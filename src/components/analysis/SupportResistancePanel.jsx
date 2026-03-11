@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Target, Shield, TrendingUp, TrendingDown, ArrowDown, ArrowUp, Zap, AlertTriangle } from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowDown, ArrowUp, Zap } from "lucide-react";
 
 // ===== Pivot Points =====
 const calcPivots = (data) => {

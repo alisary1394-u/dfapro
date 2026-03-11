@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { TrendingUp, TrendingDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp } from "lucide-react";
 import { signalColor } from "@/pages/Screener";
 
 const KEY_TF_ORDER = ["5m", "15m", "1h", "4h", "1d"];

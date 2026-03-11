@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { X, TrendingUp, TrendingDown, Zap, Clock } from "lucide-react";
+import { X, TrendingUp, TrendingDown, Clock } from "lucide-react";
 import { signalColor } from "@/pages/Screener";
 
 export default function ScreenerAlertCard({ alert, onDismiss }) {

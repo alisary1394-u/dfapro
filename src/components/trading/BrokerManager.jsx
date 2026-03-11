@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import {
-  Link2, Unlink2, Zap, AlertCircle, CheckCircle2,
+import { Zap, AlertCircle,
   Loader2, Eye, EyeOff, Power, PowerOff, Key, Wifi, WifiOff
 } from "lucide-react";
 import {
