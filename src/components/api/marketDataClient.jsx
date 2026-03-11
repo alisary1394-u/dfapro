@@ -1,61 +1,87 @@
 /**
- * Client-side helper to call the marketData backend function.
+ * Client-side helper – calls Express /api/market/* endpoints (Yahoo Finance proxy).
+ * When a live broker is active (Alpaca/IBKR), routes through it for real-time data.
  */
-import { base44 } from "@/api/base44Client";
 
-const invoke = (action, extra = {}) =>
-  base44.functions.invoke("marketData", { action, ...extra });
+import { getActiveBroker } from '@/lib/brokerState';
+import {
+  getAlpacaSnapshot,
+  getAlpacaBars,
+  parseAlpacaQuote,
+} from '@/components/api/alpacaClient';
+
+const apiFetch = async (path) => {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.json();
+};
 
 export const getQuote = async (symbol, market) => {
-  const res = await invoke("quote", { symbol, market });
-  if (res.data?.error) throw new Error(res.data.error);
-  return res.data;
+  // US stocks → try active broker first for real-time price
+  const broker = getActiveBroker();
+  if (broker === 'alpaca' && (!market || market === 'us' || market === 'USA')) {
+    try {
+      const snap = await getAlpacaSnapshot(symbol);
+      const parsed = parseAlpacaQuote(snap);
+      if (parsed && parsed.price) return parsed;
+    } catch { /* fall through to Yahoo */ }
+  }
+  return apiFetch(`/api/market/quote?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}`);
 };
 
 export const getCandles = async (symbol, market, interval = 'daily') => {
-  const res = await invoke("candles", { symbol, market, interval });
-  if (res.data?.error) return null;
-  return res.data?.candles || null;
+  // US stocks → try active broker first for real-time candles
+  const broker = getActiveBroker();
+  if (broker === 'alpaca' && (!market || market === 'us' || market === 'USA')) {
+    try {
+      const bars = await getAlpacaBars(symbol, interval);
+      if (bars && bars.length > 0) return bars;
+    } catch { /* fall through to Yahoo */ }
+  }
+  const data = await apiFetch(`/api/market/candles?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}&interval=${encodeURIComponent(interval)}`);
+  return data?.candles || null;
 };
 
 export const getOverview = async (symbol, market) => {
-  const res = await invoke("overview", { symbol, market });
-  if (res.data?.error) return null;
-  return res.data;
+  return apiFetch(`/api/market/overview?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}`);
 };
 
 export const getNews = async (symbol, market) => {
-  const res = await invoke("news", { symbol, market });
-  return res.data?.news || [];
+  try {
+    const data = await apiFetch(`/api/market/news?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}`);
+    return data?.news || [];
+  } catch { return []; }
 };
 
 export const getTopMovers = async (market = 'saudi') => {
-  const res = await invoke("top_movers", { market });
-  return res.data;
+  try {
+    const data = await apiFetch(`/api/market/top_movers?market=${encodeURIComponent(market)}`);
+    return data;
+  } catch { return null; }
 };
 
 export const getForex = async (from = "USD", to = "SAR") => {
-  const res = await invoke("forex", { from, to });
-  if (res.data?.error) return null;
-  return res.data;
+  return apiFetch(`/api/market/forex?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
 };
 
 export const getCrypto = async (coin = "BTC", currency = "USD") => {
-  const res = await invoke("crypto", { coin, currency });
-  if (res.data?.error) return null;
-  return res.data;
+  try {
+    const data = await apiFetch(`/api/market/crypto?coin=${encodeURIComponent(coin)}&currency=${encodeURIComponent(currency)}`);
+    return data;
+  } catch { return null; }
 };
 
 export const getIndices = async () => {
-  const res = await invoke("indices");
-  if (res.data?.error) return null;
-  return res.data?.indices || null;
+  const data = await apiFetch('/api/market/indices');
+  return data?.indices || null;
 };
 
 export const getBatchQuotes = async (symbols, market) => {
-  const res = await invoke("batch_quotes", { symbols: symbols.join(','), market });
-  if (res.data?.error) return null;
-  return res.data?.quotes || null;
+  if (!symbols?.length) return {};
+  const data = await apiFetch(
+    `/api/market/batch-quotes?symbols=${encodeURIComponent(symbols.join(','))}&market=${encodeURIComponent(market || 'saudi')}`
+  );
+  return data?.quotes || {};
 };
 
 // Simulated candles centred around a real price when API limit is hit

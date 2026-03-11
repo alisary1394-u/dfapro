@@ -86,3 +86,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hide lightweight-charts TradingView attribution logo */
+#tv-attr-logo {
+  display: none !important;
+}

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
-import TradingViewChart from "@/components/charts/TradingViewChart";
 import { getQuote, getCandles, getOverview, buildFallbackCandles } from "@/components/api/marketDataClient";
+import { getPollInterval } from "@/lib/brokerState";
 import SearchStock from "@/components/ui/SearchStock";
 import AnalysisGauge from "@/components/ui/AnalysisGauge";
 import SmartAnalysisPanel from "@/components/charts/SmartAnalysisPanel";
@@ -87,70 +86,7 @@ ${overview ? `
 - 52 أسبوع أعلى: ${overview.high_52w} | أدنى: ${overview.low_52w}` : ""}
 ` : "لا تتوفر بيانات سوق حقيقية، استخدم معرفتك المتاحة.";
 
-    const result = await base44.integrations.Core.InvokeLLM({
-      prompt: `أنت محلل أسهم خبير. قم بتحليل سهم ${stock.symbol} (${stock.name}) في السوق ${stock.market === 'saudi' ? 'السعودي' : 'الأمريكي'}.
-
-${realDataContext}
-
-قدم تحليلاً شاملاً يتضمن:
-1. التقييم العام (نقاط من 0-100)
-2. التحليل الفني (اتجاه، دعم، مقاومة، مؤشرات RSI و MACD)
-3. التحليل الأساسي (ربحية، نمو، تقييم)
-4. تحليل المخاطر
-5. توصية (شراء قوي، شراء، محايد، بيع، بيع قوي)
-6. السعر المستهدف
-7. نقاط القوة والضعف
-8. أخبار مؤثرة حديثة`,
-      add_context_from_internet: true,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          overall_score: { type: "number" },
-          recommendation: { type: "string" },
-          target_price: { type: "number" },
-          current_price: { type: "number" },
-          technical: {
-            type: "object",
-            properties: {
-              trend: { type: "string" },
-              support: { type: "number" },
-              resistance: { type: "number" },
-              rsi: { type: "number" },
-              macd_signal: { type: "string" },
-              score: { type: "number" }
-            }
-          },
-          fundamental: {
-            type: "object",
-            properties: {
-              pe_ratio: { type: "number" },
-              eps: { type: "number" },
-              revenue_growth: { type: "number" },
-              profit_margin: { type: "number" },
-              score: { type: "number" }
-            }
-          },
-          risk: {
-            type: "object",
-            properties: {
-              level: { type: "string" },
-              score: { type: "number" },
-              factors: { type: "array", items: { type: "string" } }
-            }
-          },
-          strengths: { type: "array", items: { type: "string" } },
-          weaknesses: { type: "array", items: { type: "string" } },
-          summary: { type: "string" },
-          news: { type: "array", items: { type: "string" } }
-        }
-      }
-    });
-    
-    // Override current_price with real data if available
-    if (quote && result) result.current_price = quote.price;
-    if (overview?.analyst_target && result && !result.target_price) result.target_price = overview.analyst_target;
-
-    setAnalysis(result);
+    setAnalysis(null);
     setAnalyzing(false);
   };
 
@@ -294,7 +230,7 @@ ${realDataContext}
               <BarChart3 className="w-5 h-5 text-[#3b82f6]" />
               <h3 className="text-lg font-bold text-white">الرسم البياني الاحترافي</h3>
             </div>
-            <TradingViewChart symbol={selectedStock?.symbol} market={selectedStock?.market || "us"} />
+            <div className="flex items-center justify-center h-40 text-[#64748b] text-sm">الرسم البياني الاحترافي غير متاح في هذه الصفحة</div>
           </div>
 
           {/* Target Engine */}

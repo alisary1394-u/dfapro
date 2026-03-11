@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { entities } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getQuote } from "@/components/api/marketDataClient";
+import { getPollInterval } from "@/lib/brokerState";
 import { Briefcase, Plus, RefreshCw, PieChart, BarChart3 } from "lucide-react";
 import PortfolioStats from "@/components/portfolio/PortfolioStats";
 import HoldingsTable from "@/components/portfolio/HoldingsTable";
@@ -15,11 +16,11 @@ export default function Portfolio() {
 
   const { data: holdings = [], isLoading } = useQuery({
     queryKey: ['portfolio'],
-    queryFn: () => base44.entities.Portfolio.list(),
+    queryFn: () => entities.Portfolio.list(),
   });
 
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.Portfolio.create(data),
+    mutationFn: (data) => entities.Portfolio.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
       setShowAdd(false);
@@ -27,12 +28,12 @@ export default function Portfolio() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.Portfolio.delete(id),
+    mutationFn: (id) => entities.Portfolio.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolio'] }),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Portfolio.update(id, data),
+    mutationFn: ({ id, data }) => entities.Portfolio.update(id, data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolio'] }),
   });
 
@@ -59,12 +60,12 @@ export default function Portfolio() {
     setRefreshing(false);
   };
 
-  // Auto-refresh prices every 30 seconds
+  // Auto-refresh prices using active broker interval
   useEffect(() => {
     if (holdings.length === 0) return;
     const iv = setInterval(() => {
       if (!refreshing) refreshPrices();
-    }, 5000);
+    }, getPollInterval());
     return () => clearInterval(iv);
   }, [holdings, refreshing]);
 

@@ -96,9 +96,13 @@ export const searchAlpacaAsset = async (query) => {
   return alpacaFetch(`/search?q=${encodeURIComponent(query)}`);
 };
 
-// ─── Streaming (SSE) ─────────────────────────────────────────
+// ─── Streaming (SSE → server WebSocket → Alpaca) ─────────────
 
-/** Subscribe to real-time quotes via SSE (server polls Alpaca) */
+/**
+ * Subscribe to real-time quotes.
+ * Server-side: single WebSocket to Alpaca WS stream → fan-out via SSE.
+ * Clients receive ticks within milliseconds of market events.
+ */
 export const subscribeAlpacaQuotes = (symbol, onTick) => {
   const es = new EventSource(`/api/alpaca/stream/${encodeURIComponent(symbol)}`);
 

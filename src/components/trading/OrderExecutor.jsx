@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
 import {
   Send, Loader2, AlertCircle, CheckCircle2, X,
   TrendingUp, TrendingDown
@@ -25,26 +24,7 @@ export default function OrderExecutor({ symbol, currentPrice, mode = "paper" }) 
     setResult(null);
 
     try {
-      const res = await base44.functions.invoke("brokerIntegration", {
-        action: "order",
-        mode,
-        symbol: symbol.toUpperCase(),
-        qty: quantity,
-        side,
-        order_type: orderType,
-        ...(orderType === "limit" && { limit_price: limitPrice }),
-      });
-
-      setResult({
-        id: res.data.id,
-        status: res.data.status,
-        filledQty: res.data.filled_qty,
-        filledPrice: res.data.filled_avg_price,
-      });
-
-      // Reset form
-      setQuantity(1);
-      setLimitPrice(currentPrice || 0);
+      throw new Error("خدمة تنفيذ الأوامر غير متاحة حالياً");
     } catch (err) {
       setError(err.message || "Failed to submit order");
     } finally {

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
 import {
   Newspaper, TrendingUp, TrendingDown, Minus, Loader2,
   Zap, AlertTriangle, CheckCircle2, Radio, MessageSquare, Brain
@@ -35,53 +34,7 @@ export default function SentimentAnalysis({ stock, botSignal = null }) {
   const fetchSentiment = async () => {
     setLoading(true);
     setSentiment(null);
-    const result = await base44.integrations.Core.InvokeLLM({
-      prompt: `أنت محلل مشاعر السوق المالي. قم بتحليل مشاعر الأخبار والسوق المحيطة بسهم ${stock.symbol} (${stock.name || stock.symbol}) في السوق ${stock.market === "saudi" ? "السعودي" : "الأمريكي"}.
-
-قدّم تحليلاً دقيقاً يشمل:
-1. المشاعر العامة للأخبار (bullish/slightly_bullish/neutral/slightly_bearish/bearish)
-2. نقاط تأثير الأخبار على السعر (0-100، حيث 100 = إيجابي جداً)
-3. قائمة من 4-6 أخبار/أحداث حديثة حقيقية أو متوقعة مع مشاعر كل منها ومستوى تأثيرها
-4. توقع حركة السعر قصير المدى بناءً على المشاعر
-5. مؤشر ثقة التحليل (0-100)
-6. ملخص تأثير الأخبار على قرار التداول`,
-      add_context_from_internet: true,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          overall_sentiment: { type: "string", enum: ["bullish", "slightly_bullish", "neutral", "slightly_bearish", "bearish"] },
-          sentiment_score: { type: "number" },
-          confidence: { type: "number" },
-          price_impact_forecast: { type: "string" },
-          trading_recommendation: { type: "string" },
-          sentiment_summary: { type: "string" },
-          news_items: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                headline: { type: "string" },
-                sentiment: { type: "string", enum: ["bullish", "slightly_bullish", "neutral", "slightly_bearish", "bearish"] },
-                impact_score: { type: "number" },
-                source: { type: "string" },
-                time_ago: { type: "string" }
-              }
-            }
-          },
-          sentiment_breakdown: {
-            type: "object",
-            properties: {
-              positive_count: { type: "number" },
-              neutral_count: { type: "number" },
-              negative_count: { type: "number" },
-              social_buzz: { type: "number" },
-              institutional_flow: { type: "string" }
-            }
-          }
-        }
-      }
-    });
-    setSentiment(result);
+    setSentiment(null);
     setLoading(false);
   };
 

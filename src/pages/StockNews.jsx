@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
 import {
   Newspaper, TrendingUp, TrendingDown, Minus, Loader2, Search, X,
   Brain, Radio, RefreshCw, ChevronDown, ChevronUp, Zap, BarChart3,
@@ -144,66 +143,7 @@ export default function StockNews() {
     setLoading(true);
     setData(null);
     setFilter("all");
-    const result = await base44.integrations.Core.InvokeLLM({
-      prompt: `أنت محلل أخبار مالي متخصص. قم بجلب وتحليل آخر أخبار سهم ${stock.symbol} (${stock.name}) بشكل تفصيلي.
-
-قدم تحليلاً شاملاً يتضمن:
-1. المشاعر العامة للسوق تجاه هذا السهم الآن
-2. قائمة من 6-8 أخبار/أحداث حديثة حقيقية ودقيقة مع تحليل تأثير كل منها
-3. توزيع الأخبار بين إيجابية وسلبية ومحايدة
-4. توقع حركة السعر خلال الأسبوع القادم
-5. مستوى الضجيج الاجتماعي حول السهم
-6. توصية تداول بناء على مجموع المشاعر`,
-      add_context_from_internet: true,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          overall_sentiment: { type: "string", enum: ["bullish", "slightly_bullish", "neutral", "slightly_bearish", "bearish"] },
-          sentiment_score: { type: "number" },
-          confidence: { type: "number" },
-          price_forecast_week: { type: "string" },
-          social_buzz_level: { type: "string", enum: ["منخفض", "متوسط", "مرتفع", "مرتفع جداً"] },
-          trading_signal: { type: "string" },
-          summary: { type: "string" },
-          news_items: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                headline: { type: "string" },
-                sentiment: { type: "string", enum: ["bullish", "slightly_bullish", "neutral", "slightly_bearish", "bearish"] },
-                impact_score: { type: "number" },
-                source: { type: "string" },
-                time_ago: { type: "string" },
-                analysis: { type: "string" },
-                price_effect: { type: "string" }
-              }
-            }
-          },
-          breakdown: {
-            type: "object",
-            properties: {
-              positive: { type: "number" },
-              neutral: { type: "number" },
-              negative: { type: "number" },
-              institutional_flow: { type: "string" },
-              analyst_consensus: { type: "string" }
-            }
-          },
-          weekly_sentiment_trend: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                day: { type: "string" },
-                score: { type: "number" }
-              }
-            }
-          }
-        }
-      }
-    });
-    setData(result);
+    setData(null);
     setLoading(false);
   };
 

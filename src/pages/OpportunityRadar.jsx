@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import AnalysisGauge from "@/components/ui/AnalysisGauge";
@@ -36,39 +35,7 @@ export default function OpportunityRadar() {
       safe: "ابحث عن أسهم مستقرة منخفضة التقلب مع أساسيات قوية"
     };
 
-    const result = await base44.integrations.Core.InvokeLLM({
-      prompt: `أنت محلل أسهم خبير. ${strategyPrompts[strategy.id]}
-      
-السوق: ${market === 'saudi' ? 'السوق السعودي (تداول)' : 'السوق الأمريكي'}
-      
-أعطني قائمة بأفضل 6 أسهم تحقق هذه الاستراتيجية مع تحليل مختصر لكل سهم.`,
-      add_context_from_internet: true,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          stocks: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                symbol: { type: "string" },
-                name: { type: "string" },
-                score: { type: "number" },
-                current_price: { type: "number" },
-                target_price: { type: "number" },
-                reason: { type: "string" },
-                key_metric: { type: "string" },
-                key_value: { type: "string" },
-                risk_level: { type: "string" }
-              }
-            }
-          },
-          market_insight: { type: "string" }
-        }
-      }
-    });
-
-    setOpportunities(result);
+    setOpportunities(null);
     setLoading(false);
   };
 

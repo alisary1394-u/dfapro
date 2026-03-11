@@ -1,7 +1,10 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from 'react';
+import { authClient } from '@/api/authClient';
 
 const AuthContext = createContext(null);
+
+const IDLE_TIMEOUT = 30 * 60 * 1000;   // 30 minutes
+const IDLE_WARNING = 2 * 60 * 1000;    // warn 2 minutes before logout
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -10,17 +13,66 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
   const [authError, setAuthError] = useState(null);
   const [appPublicSettings, setAppPublicSettings] = useState(null);
+  const [idleWarning, setIdleWarning] = useState(false);
+  const [idleSecondsLeft, setIdleSecondsLeft] = useState(120);
 
-  useEffect(() => {
-    checkAppState();
+  const idleTimerRef = useRef(null);
+  const warningTimerRef = useRef(null);
+  const countdownRef = useRef(null);
+
+  const clearAllTimers = () => {
+    clearTimeout(idleTimerRef.current);
+    clearTimeout(warningTimerRef.current);
+    clearInterval(countdownRef.current);
+  };
+
+  const resetIdleTimer = useCallback(() => {
+    clearAllTimers();
+    setIdleWarning(false);
+
+    // Show warning 2 minutes before auto-logout
+    warningTimerRef.current = setTimeout(() => {
+      setIdleWarning(true);
+      let secs = 120;
+      setIdleSecondsLeft(secs);
+      countdownRef.current = setInterval(() => {
+        secs -= 1;
+        setIdleSecondsLeft(secs);
+        if (secs <= 0) clearInterval(countdownRef.current);
+      }, 1000);
+    }, IDLE_TIMEOUT - IDLE_WARNING);
+
+    // Auto-logout after full idle timeout
+    idleTimerRef.current = setTimeout(() => {
+      clearAllTimers();
+      authClient.logout().catch(() => {}).finally(() => {
+        window.location.assign('/login');
+      });
+    }, IDLE_TIMEOUT);
   }, []);
+
+  // Start/stop idle tracking based on auth state
+  useEffect(() => {
+    if (!isAuthenticated) {
+      clearAllTimers();
+      setIdleWarning(false);
+      return;
+    }
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach(e => window.addEventListener(e, resetIdleTimer, { passive: true }));
+    resetIdleTimer();
+    return () => {
+      events.forEach(e => window.removeEventListener(e, resetIdleTimer));
+      clearAllTimers();
+    };
+  }, [isAuthenticated, resetIdleTimer]);
 
   const checkAppState = async () => {
     try {
       setIsLoadingPublicSettings(true);
       setIsLoadingAuth(true);
       setAuthError(null);
-      const currentUser = await base44.auth.me();
+      const currentUser = await authClient.me();
       setUser(currentUser);
       setIsAuthenticated(true);
       setAppPublicSettings({ id: 'local', public_settings: {} });
@@ -43,7 +95,7 @@ export const AuthProvider = ({ children }) => {
     try {
       // Now check if the user is authenticated
       setIsLoadingAuth(true);
-      const currentUser = await base44.auth.me();
+      const currentUser = await authClient.me();
       setUser(currentUser);
       setIsAuthenticated(true);
       setIsLoadingAuth(false);
@@ -62,7 +114,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async (shouldRedirect = true) => {
-    await base44.auth.logout();
+    await authClient.logout();
     setUser(null);
     setIsAuthenticated(false);
     setAuthError({ type: 'auth_required', message: 'Authentication required' });
@@ -88,7 +140,10 @@ export const AuthProvider = ({ children }) => {
       checkAppState,
       setUser,
       setIsAuthenticated,
-      setAuthError
+      setAuthError,
+      idleWarning,
+      idleSecondsLeft,
+      resetIdleTimer,
     }}>
       {children}
     </AuthContext.Provider>

@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
@@ -29,48 +28,6 @@ export default function NextSessionPredictions() {
   const fetchPredictions = async () => {
     setLoading(true);
     setPredictions(null);
-    const stocks = STOCKS_TO_ANALYZE.filter(s => s.market === market);
-    try {
-      const result = await base44.integrations.Core.InvokeLLM({
-        prompt: `أنت محلل أسهم خبير. بناءً على بيانات السوق الحالية، توقع أداء الأسهم التالية في جلسة التداول القادمة:
-
-الأسهم المطلوب تحليلها (${market === 'saudi' ? 'السوق السعودي' : 'السوق الأمريكي'}):
-${stocks.map(s => `- ${s.symbol} (${s.name})`).join('\n')}
-
-لكل سهم قدم:
-1. التوقع: هل سيرتفع أم ينخفض
-2. نسبة الاحتمال (0-100%)
-3. النسبة المئوية المتوقعة للتغيير
-4. السبب الرئيسي (جملة واحدة قصيرة)
-
-استخدم أحدث البيانات والأخبار المتاحة.`,
-        add_context_from_internet: true,
-        response_json_schema: {
-          type: "object",
-          properties: {
-            predictions: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  symbol: { type: "string" },
-                  name: { type: "string" },
-                  direction: { type: "string", enum: ["up", "down"] },
-                  probability: { type: "number" },
-                  expected_change_pct: { type: "number" },
-                  reason: { type: "string" },
-                }
-              }
-            },
-            market_summary: { type: "string" },
-            generated_at: { type: "string" }
-          }
-        }
-      });
-      setPredictions(result);
-    } catch (e) {
-      console.error(e);
-    }
     setLoading(false);
   };
 

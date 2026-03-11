@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { entities } from "@/api/entities";
 import { getQuote } from "@/components/api/marketDataClient";
+import { getPollInterval } from "@/lib/brokerState";
 import AddTradeModal from "@/components/virtualportfolio/AddTradeModal";
 import TradeRow from "@/components/virtualportfolio/TradeRow";
 import {
@@ -39,7 +40,7 @@ export default function VirtualPortfolio() {
   const [portfolioHistory, setPortfolioHistory] = useState([]);
 
   const fetchTrades = useCallback(async () => {
-    const all = await base44.entities.VirtualTrade.list("-created_date", 100);
+    const all = await entities.VirtualTrade.list("-created_date", 100);
     setTrades(all);
     setLoading(false);
   }, []);
@@ -54,7 +55,7 @@ export default function VirtualPortfolio() {
       openTrades.map(async (trade) => {
         const quote = await getQuote(trade.symbol, trade.market).catch(() => null);
         if (quote?.price) {
-          await base44.entities.VirtualTrade.update(trade.id, { current_price: quote.price });
+          await entities.VirtualTrade.update(trade.id, { current_price: quote.price });
           return { ...trade, current_price: quote.price };
         }
         return trade;

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
 import SearchStock from "@/components/ui/SearchStock";
 import AnalysisGauge from "@/components/ui/AnalysisGauge";
 import {
@@ -47,55 +46,7 @@ export default function Compare() {
 
     const stockList = stocks.map(s => `${s.symbol} (${s.name}) - السوق: ${s.market === 'saudi' ? 'السعودي' : 'الأمريكي'}`).join('\n');
 
-    const result = await base44.integrations.Core.InvokeLLM({
-      prompt: `أنت محلل أسهم خبير. قم بمقارنة شاملة بين الأسهم التالية:
-${stockList}
-
-قارن بينها من حيث:
-1. التقييم العام (نقاط من 0-100)
-2. المؤشرات المالية الرئيسية
-3. نقاط القوة والضعف لكل سهم
-4. أيهم الأفضل للاستثمار ولماذا
-5. مقارنة على 6 محاور (الربحية، النمو، السيولة، الاستقرار، القيمة، الزخم)`,
-      add_context_from_internet: true,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          stocks: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                symbol: { type: "string" },
-                overall_score: { type: "number" },
-                pe_ratio: { type: "number" },
-                market_cap: { type: "string" },
-                revenue_growth: { type: "number" },
-                profit_margin: { type: "number" },
-                dividend_yield: { type: "number" },
-                strengths: { type: "array", items: { type: "string" } },
-                weaknesses: { type: "array", items: { type: "string" } },
-                radar: {
-                  type: "object",
-                  properties: {
-                    profitability: { type: "number" },
-                    growth: { type: "number" },
-                    liquidity: { type: "number" },
-                    stability: { type: "number" },
-                    value: { type: "number" },
-                    momentum: { type: "number" }
-                  }
-                }
-              }
-            }
-          },
-          recommendation: { type: "string" },
-          summary: { type: "string" }
-        }
-      }
-    });
-
-    setComparison(result);
+    setComparison(null);
     setLoading(false);
   };
 

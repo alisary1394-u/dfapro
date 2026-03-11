@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
 import { getQuote, getBatchQuotes } from "@/components/api/marketDataClient";
+import { getPollInterval } from "@/lib/brokerState";
 import { createPageUrl } from "@/utils";
 import { useNavigate } from "react-router-dom";
 import {
@@ -86,25 +86,7 @@ function AiMarketInsight({ market, stocks }) {
     const gainers = loadedStocks.filter(s => s.change_percent > 0).sort((a, b) => b.change_percent - a.change_percent).slice(0, 3);
     const losers = loadedStocks.filter(s => s.change_percent < 0).sort((a, b) => a.change_percent - b.change_percent).slice(0, 3);
 
-    const res = await base44.integrations.Core.InvokeLLM({
-      prompt: `أنت محلل سوق مالي خبير. حلل وضع السوق ${market === "saudi" ? "السعودي (تداول)" : "الأمريكي"} اليوم.
-أكثر الأسهم ارتفاعاً: ${gainers.map(s => `${s.symbol} +${s.change_percent?.toFixed(2)}%`).join(", ")}
-أكثر الأسهم انخفاضاً: ${losers.map(s => `${s.symbol} ${s.change_percent?.toFixed(2)}%`).join(", ")}
-قدم: 1- توجه السوق العام  2- أبرز 3 فرص  3- أبرز مخاطرة  4- توصية المتداول اليوم في جملة واحدة.`,
-      add_context_from_internet: true,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          market_trend: { type: "string" },
-          trend_strength: { type: "number" },
-          opportunities: { type: "array", items: { type: "string" } },
-          risk: { type: "string" },
-          daily_tip: { type: "string" },
-          sentiment: { type: "string" }
-        }
-      }
-    });
-    setResult(res);
+    setResult(null);
     setLoading(false);
   };
 
@@ -318,8 +300,7 @@ export default function MarketWatch() {
         // Fallback: load one by one
         for (let j = 0; j < chunk.length; j++) {
           try {
-            const res = await base44.functions.invoke("marketData", { action: "quote", symbol: chunk[j].symbol, market });
-            const q = res?.data;
+            const q = await getQuote(chunk[j].symbol, market);
             if (q && q.price != null && !q.error) {
               updated[batch + j] = { ...updated[batch + j], ...q };
               if (q.change_percent > 0) up++;
@@ -377,7 +358,7 @@ export default function MarketWatch() {
 
   useEffect(() => {
     loadQuotes(stockList, true);
-    const iv = setInterval(() => silentRefresh(stockList), 10000);
+    const iv = setInterval(() => silentRefresh(stockList), getPollInterval());
     return () => clearInterval(iv);
   }, [market]);
 
@@ -387,19 +368,6 @@ export default function MarketWatch() {
     const loaded = stocks.filter(s => s.price).slice(0, 12);
     if (loaded.length === 0) { setGeneratingSignals(false); return; }
 
-    const res = await base44.integrations.Core.InvokeLLM({
-      prompt: `بناءً على هذه الأسهم وبيانات تغيرها اليومي، أعطِ إشارة فنية سريعة لكل سهم (شراء / بيع / انتظار):
-${loaded.map(s => `${s.symbol}: سعر ${s.price?.toFixed(2)}, تغير ${s.change_percent?.toFixed(2)}%`).join("\n")}
-
-أعد JSON يحتوي على مفتاح "signals" يكون قاموسًا من رمز السهم إلى الإشارة (شراء أو بيع أو انتظار فقط).`,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          signals: { type: "object", additionalProperties: { type: "string" } }
-        }
-      }
-    });
-    if (res?.signals) setAiSignals(res.signals);
     setGeneratingSignals(false);
   };
 

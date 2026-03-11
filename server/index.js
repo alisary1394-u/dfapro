@@ -74,10 +74,13 @@ const intervalMap = {
   'daily': '1d', 'weekly': '1wk', 'monthly': '1mo',
 };
 
-const rangeMap = {
-  '1m': '1d', '5m': '5d', '15m': '5d', '30m': '1mo', '60m': '1mo',
-  '1d': '1y', '1wk': '5y', '1mo': 'max',
+// Yahoo Finance free-tier limits: 1m→7d, intraday→60d, EOD→unlimited
+const defaultRangeMap = {
+  '1m': '5d', '5m': '1mo', '15m': '3mo', '30m': '6mo', '60m': '2y',
+  '1d': '5y', '1wk': 'max', '1mo': 'max',
 };
+// Valid Yahoo Finance range values
+const validRanges = new Set(['1d','5d','1mo','3mo','6mo','1y','2y','5y','10y','ytd','max']);
 
 const yfFetch = async (url) => {
   const res = await fetch(url, {
@@ -90,12 +93,44 @@ const yfFetch = async (url) => {
   return res.json();
 };
 
+// ── In-memory cache ──────────────────────────────────────────
+const cache = new Map();
+const TTL = {
+  quote:       15 * 1000,   // 15 seconds
+  'batch-quotes': 15 * 1000,
+  candles_intraday: 3 * 60 * 1000,   // 3 minutes
+  candles_daily:   5 * 60 * 1000,    // 5 minutes
+  indices:     60 * 1000,   // 60 seconds
+  'top-movers': 2 * 60 * 1000,  // 2 minutes
+  overview:    60 * 1000,
+  news:        5 * 60 * 1000,
+  forex:       60 * 1000,
+  crypto:      30 * 1000,
+};
+
+const cacheGet = (key) => {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > entry.ttl) { cache.delete(key); return null; }
+  return entry.data;
+};
+const cacheSet = (key, data, ttlMs) => cache.set(key, { data, ts: Date.now(), ttl: ttlMs });
+// Periodically evict stale entries to avoid unbounded growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of cache) { if (now - v.ts > v.ttl) cache.delete(k); }
+}, 5 * 60 * 1000);
+
 // GET /api/market/quote?symbol=2222&market=saudi
 app.get('/api/market/quote', async (req, res) => {
   try {
     const { symbol, market = 'saudi' } = req.query;
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
     
+    const cacheKey = `quote:${symbol}:${market}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
     const ySymbol = toYahooSymbol(symbol, market);
     const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=1d&range=2d`);
     const meta = data.chart?.result?.[0]?.meta;
@@ -113,7 +148,7 @@ app.get('/api/market/quote', async (req, res) => {
     const lowPrices = quotes?.low?.filter(v => v != null) || [];
     const volumes = quotes?.volume?.filter(v => v != null) || [];
     
-    res.json({
+    const result = {
       price,
       change,
       change_percent: changePct,
@@ -122,23 +157,28 @@ app.get('/api/market/quote', async (req, res) => {
       low: lowPrices.length > 0 ? Math.min(...lowPrices) : price,
       name: meta.shortName || meta.symbol || symbol,
       currency: meta.currency || (market === 'saudi' ? 'SAR' : 'USD'),
-    });
+    };
+    cacheSet(cacheKey, result, TTL.quote);
+    res.json(result);
   } catch (err) {
     console.error('Quote error:', err.message);
     res.status(502).json({ error: 'Failed to fetch quote' });
   }
 });
 
-// GET /api/market/candles?symbol=2222&market=saudi&interval=daily&limit=365
+// GET /api/market/candles?symbol=2222&market=saudi&interval=daily[&range=5y]
 app.get('/api/market/candles', async (req, res) => {
   try {
-    const { symbol, market = 'saudi', interval = 'daily' } = req.query;
+    const { symbol, market = 'saudi', interval = 'daily', range: reqRange } = req.query;
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
-    
-    const ySymbol = toYahooSymbol(symbol, market);
+
     const yfInterval = intervalMap[interval] || '1d';
-    const range = rangeMap[yfInterval] || '1y';
-    
+    const range = (reqRange && validRanges.has(reqRange)) ? reqRange : (defaultRangeMap[yfInterval] || '5y');
+    const cacheKey = `candles:${symbol}:${market}:${yfInterval}:${range}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const ySymbol = toYahooSymbol(symbol, market);
     const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=${yfInterval}&range=${range}`);
     const result = data.chart?.result?.[0];
     
@@ -159,7 +199,9 @@ app.get('/api/market/candles', async (req, res) => {
         volume: q.volume[i] || 0,
       };
     }).filter(Boolean);
-    
+
+    const ttlMs = isIntraday ? TTL.candles_intraday : TTL.candles_daily;
+    cacheSet(cacheKey, { candles }, ttlMs);
     res.json({ candles });
   } catch (err) {
     console.error('Candles error:', err.message);
@@ -173,6 +215,10 @@ app.get('/api/market/overview', async (req, res) => {
     const { symbol, market = 'saudi' } = req.query;
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
     
+    const cacheKey = `overview:${symbol}:${market}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
     const ySymbol = toYahooSymbol(symbol, market);
     const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=1d&range=1y`);
     const meta = data.chart?.result?.[0]?.meta;
@@ -183,14 +229,16 @@ app.get('/api/market/overview', async (req, res) => {
     const allHighs = quotes?.high?.filter(v => v != null) || [];
     const allLows = quotes?.low?.filter(v => v != null) || [];
     
-    res.json({
+    const result = {
       name: meta.shortName || symbol,
       exchange: meta.exchangeName || '',
       currency: meta.currency || '',
       high_52w: allHighs.length > 0 ? +Math.max(...allHighs).toFixed(2) : 0,
       low_52w: allLows.length > 0 ? +Math.min(...allLows).toFixed(2) : 0,
       market_cap: meta.marketCap || '',
-    });
+    };
+    cacheSet(cacheKey, result, TTL.overview);
+    res.json(result);
   } catch (err) {
     console.error('Overview error:', err.message);
     res.status(502).json({ error: 'Failed to fetch overview' });
@@ -221,6 +269,9 @@ app.get('/api/market/search', async (req, res) => {
 // GET /api/market/indices
 app.get('/api/market/indices', async (req, res) => {
   try {
+    const cached = cacheGet('indices');
+    if (cached) return res.json(cached);
+
     const symbols = ['^TASI.SR', '^GSPC', '^IXIC', '^DJI'];
     const names = ['تاسي', 'S&P 500', 'ناسداك', 'داو جونز'];
     
@@ -241,6 +292,7 @@ app.get('/api/market/indices', async (req, res) => {
       };
     });
     
+    cacheSet('indices', { indices }, TTL.indices);
     res.json({ indices });
   } catch (err) {
     console.error('Indices error:', err.message);
@@ -252,10 +304,15 @@ app.get('/api/market/indices', async (req, res) => {
 app.get('/api/market/forex', async (req, res) => {
   try {
     const { from = 'USD', to = 'SAR' } = req.query;
+    const cacheKey = `forex:${from}:${to}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
     const symbol = `${from}${to}=X`;
     const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(symbol)}?interval=1d&range=2d`);
     const meta = data.chart?.result?.[0]?.meta;
-    res.json({ rate: meta?.regularMarketPrice ?? 0, from, to });
+    const result = { rate: meta?.regularMarketPrice ?? 0, from, to };
+    cacheSet(cacheKey, result, TTL.forex);
+    res.json(result);
   } catch (err) {
     console.error('Forex error:', err.message);
     res.json({ rate: from === 'USD' && to === 'SAR' ? 3.75 : 1.0, from: req.query.from, to: req.query.to });
@@ -266,13 +323,18 @@ app.get('/api/market/forex', async (req, res) => {
 app.get('/api/market/crypto', async (req, res) => {
   try {
     const { coin = 'BTC', currency = 'USD' } = req.query;
+    const cacheKey = `crypto:${coin}:${currency}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
     const symbol = `${coin}-${currency}`;
     const data = await yfFetch(`${YF_BASE}/${encodeURIComponent(symbol)}?interval=1d&range=2d`);
     const meta = data.chart?.result?.[0]?.meta;
     const price = meta?.regularMarketPrice ?? 0;
     const prev = meta?.previousClose ?? meta?.chartPreviousClose ?? price;
     const change24h = prev !== 0 ? +(((price - prev) / prev) * 100).toFixed(2) : 0;
-    res.json({ price, change_24h: change24h, coin, currency });
+    const result = { price, change_24h: change24h, coin, currency };
+    cacheSet(cacheKey, result, TTL.crypto);
+    res.json(result);
   } catch (err) {
     console.error('Crypto error:', err.message);
     res.json({ price: 0, change_24h: 0, coin: req.query.coin, currency: req.query.currency });
@@ -283,6 +345,10 @@ app.get('/api/market/crypto', async (req, res) => {
 app.get('/api/market/top-movers', async (req, res) => {
   try {
     const { market = 'saudi' } = req.query;
+    const cacheKey = `top-movers:${market}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
     const symbols = market === 'saudi'
       ? ['2222.SR','1120.SR','2010.SR','7010.SR','1180.SR','2380.SR','1211.SR','1010.SR','4190.SR','2350.SR','2050.SR','1060.SR','7020.SR','7030.SR','2280.SR','4200.SR','3010.SR','8010.SR','2082.SR','4030.SR']
       : ['AAPL','MSFT','NVDA','TSLA','AMZN','META','GOOGL','AMD','NFLX','JPM','BAC','V','WMT','DIS','INTC','COIN','PLTR','SOFI','CRM','ORCL'];
@@ -310,10 +376,12 @@ app.get('/api/market/top-movers', async (req, res) => {
     }).filter(Boolean);
     
     const sorted = [...stocks].sort((a, b) => b.change - a.change);
-    res.json({
+    const result = {
       gainers: sorted.filter(s => s.change > 0).slice(0, 10),
       losers: sorted.filter(s => s.change < 0).sort((a, b) => a.change - b.change).slice(0, 10),
-    });
+    };
+    cacheSet(cacheKey, result, TTL['top-movers']);
+    res.json(result);
   } catch (err) {
     console.error('Top movers error:', err.message);
     res.json({ gainers: [], losers: [] });
@@ -324,6 +392,9 @@ app.get('/api/market/top-movers', async (req, res) => {
 app.get('/api/market/news', async (req, res) => {
   try {
     const { symbol, market = 'saudi' } = req.query;
+    const cacheKey = `news:${symbol}:${market}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
     const ySymbol = symbol ? toYahooSymbol(symbol, market) : (market === 'saudi' ? '^TASI.SR' : '^GSPC');
     
     const data = await yfFetch(`${YF_SEARCH}?q=${encodeURIComponent(ySymbol)}&newsCount=10&quotesCount=0`);
@@ -335,6 +406,7 @@ app.get('/api/market/news', async (req, res) => {
       thumbnail: item.thumbnail?.resolutions?.[0]?.url || '',
     }));
     
+    cacheSet(cacheKey, { news }, TTL.news);
     res.json({ news });
   } catch (err) {
     console.error('News error:', err.message);
@@ -348,41 +420,54 @@ app.get('/api/market/batch-quotes', async (req, res) => {
     const { symbols: symbolsStr, market = 'saudi' } = req.query;
     if (!symbolsStr) return res.json({ quotes: {} });
     
-    const symbolList = symbolsStr.split(',').slice(0, 30);
-    const results = await Promise.allSettled(
-      symbolList.map(s => {
-        const ySymbol = toYahooSymbol(s.trim(), market);
-        return yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=1d&range=2d`);
-      })
-    );
-    
+    const symbolList = symbolsStr.split(',').map(s => s.trim()).slice(0, 30);
+
     const quotes = {};
-    results.forEach((r, i) => {
-      const sym = symbolList[i].trim();
-      if (r.status !== 'fulfilled') { quotes[sym] = null; return; }
-      const meta = r.value.chart?.result?.[0]?.meta;
-      const q = r.value.chart?.result?.[0]?.indicators?.quote?.[0];
-      if (!meta) { quotes[sym] = null; return; }
-      const price = meta.regularMarketPrice ?? 0;
-      const prev = meta.previousClose ?? meta.chartPreviousClose ?? price;
-      const change = +(price - prev).toFixed(2);
-      const changePct = prev !== 0 ? +((change / prev) * 100).toFixed(2) : 0;
-      const volumes = q?.volume?.filter(v => v != null) || [];
-      const highs = q?.high?.filter(v => v != null) || [];
-      const lows = q?.low?.filter(v => v != null) || [];
-      quotes[sym] = {
-        price: +price.toFixed(2),
-        change,
-        change_percent: changePct,
-        volume: volumes.length > 0 ? volumes[volumes.length - 1] : 0,
-        high: highs.length > 0 ? Math.max(...highs) : price,
-        low: lows.length > 0 ? Math.min(...lows) : price,
-        open: prev,
-        name: meta.shortName || sym,
-        currency: meta.currency || (market === 'saudi' ? 'SAR' : 'USD'),
-      };
-    });
-    
+    const toFetch = [];
+
+    // Serve cached individual quotes first, only fetch uncached symbols
+    for (const sym of symbolList) {
+      const hit = cacheGet(`quote:${sym}:${market}`);
+      if (hit) { quotes[sym] = hit; }
+      else { toFetch.push(sym); }
+    }
+
+    if (toFetch.length > 0) {
+      const results = await Promise.allSettled(
+        toFetch.map(s => {
+          const ySymbol = toYahooSymbol(s, market);
+          return yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=1d&range=2d`);
+        })
+      );
+      results.forEach((r, i) => {
+        const sym = toFetch[i];
+        if (r.status !== 'fulfilled') { quotes[sym] = null; return; }
+        const meta = r.value.chart?.result?.[0]?.meta;
+        const q = r.value.chart?.result?.[0]?.indicators?.quote?.[0];
+        if (!meta) { quotes[sym] = null; return; }
+        const price = meta.regularMarketPrice ?? 0;
+        const prev = meta.previousClose ?? meta.chartPreviousClose ?? price;
+        const change = +(price - prev).toFixed(2);
+        const changePct = prev !== 0 ? +((change / prev) * 100).toFixed(2) : 0;
+        const volumes = q?.volume?.filter(v => v != null) || [];
+        const highs = q?.high?.filter(v => v != null) || [];
+        const lows = q?.low?.filter(v => v != null) || [];
+        const quoteData = {
+          price: +price.toFixed(2),
+          change,
+          change_percent: changePct,
+          volume: volumes.length > 0 ? volumes[volumes.length - 1] : 0,
+          high: highs.length > 0 ? Math.max(...highs) : price,
+          low: lows.length > 0 ? Math.min(...lows) : price,
+          open: prev,
+          name: meta.shortName || sym,
+          currency: meta.currency || (market === 'saudi' ? 'SAR' : 'USD'),
+        };
+        quotes[sym] = quoteData;
+        cacheSet(`quote:${sym}:${market}`, quoteData, TTL.quote);
+      });
+    }
+  
     res.json({ quotes });
   } catch (err) {
     console.error('Batch quotes error:', err.message);
@@ -762,7 +847,7 @@ app.get('/api/alpaca/search', async (req, res) => {
   }
 });
 
-// Alpaca SSE Streaming (polls snapshot every 3s)
+// Alpaca SSE — real-time from WebSocket stream
 app.get('/api/alpaca/stream/:symbol', (req, res) => {
   if (!alpacaApi.isConnected()) {
     return res.status(502).json({ error: 'Not connected to Alpaca' });

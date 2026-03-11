@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { entities } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -16,19 +16,19 @@ export default function WatchlistPage() {
 
   const { data: collections = [] } = useQuery({
     queryKey: ['watchlistCollections'],
-    queryFn: () => base44.entities.WatchlistCollection.list(),
+    queryFn: () => entities.WatchlistCollection.list(),
   });
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['watchlistItems', activeCollectionId],
     queryFn: () => activeCollectionId 
-      ? base44.entities.WatchlistItem.filter({ watchlist_id: activeCollectionId })
+      ? entities.WatchlistItem.filter({ watchlist_id: activeCollectionId })
       : Promise.resolve([]),
     enabled: !!activeCollectionId,
   });
 
   const createItemMutation = useMutation({
-    mutationFn: (data) => base44.entities.WatchlistItem.create(data),
+    mutationFn: (data) => entities.WatchlistItem.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['watchlistItems', activeCollectionId] });
       setShowAdd(false);
@@ -37,7 +37,7 @@ export default function WatchlistPage() {
   });
 
   const deleteItemMutation = useMutation({
-    mutationFn: (id) => base44.entities.WatchlistItem.delete(id),
+    mutationFn: (id) => entities.WatchlistItem.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['watchlistItems', activeCollectionId] }),
   });
 

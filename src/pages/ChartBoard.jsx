@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createChart, CrosshairMode, LineStyle } from "lightweight-charts";
-import { base44 } from "@/api/base44Client";
 import { getQuote } from "@/components/api/marketDataClient";
 import {
   ibkrConfig,
@@ -99,6 +98,35 @@ const CHART_TYPES = [
   { value: "bar", label: "OHLC" },
 ];
 
+// Range options per timeframe category
+const RANGE_OPTIONS = {
+  intraday: [
+    { label: "1د", value: "1d" },
+    { label: "5د", value: "5d" },
+    { label: "شهر", value: "1mo" },
+    { label: "3 أشهر", value: "3mo" },
+  ],
+  daily: [
+    { label: "3 أشهر", value: "3mo" },
+    { label: "6 أشهر", value: "6mo" },
+    { label: "سنة", value: "1y" },
+    { label: "2 سنة", value: "2y" },
+    { label: "5 سنوات", value: "5y" },
+    { label: "كل", value: "max" },
+  ],
+  weekly: [
+    { label: "سنة", value: "1y" },
+    { label: "5 سنوات", value: "5y" },
+    { label: "10 سنوات", value: "10y" },
+    { label: "كل", value: "max" },
+  ],
+  monthly: [
+    { label: "5 سنوات", value: "5y" },
+    { label: "10 سنوات", value: "10y" },
+    { label: "كل", value: "max" },
+  ],
+};
+
 const C = {
   bg: "#0c0e14", card: "#131722", surface: "#1e222d", border: "#2a2e39",
   up: "#26a69a", down: "#ef5350", gold: "#d4a843",
@@ -123,7 +151,7 @@ const DRAWING_TOOLS = [
 ];
 
 const chartOpts = (container) => ({
-  layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 11 },
+  layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 11, attributionLogo: false },
   watermark: { visible: false },
   grid: { vertLines: { color: "#1e222d40" }, horzLines: { color: "#1e222d40" } },
   width: container.clientWidth,
@@ -576,41 +604,7 @@ function AiPanel({ symbol, market, candles, onClose }) {
     const lastMacd = macdResult.macdLine.length > 0 ? macdResult.macdLine[macdResult.macdLine.length - 1].value : null;
 
     try {
-      const res = await base44.integrations.Core.InvokeLLM({
-        prompt: `أنت محلل أسواق مالية محترف متخصص بالتحليل الفني. حلل السهم ${symbol} بناءً على البيانات التالية:
-- آخر 30 شمعة إغلاق: ${prices.join(", ")}
-- أعلى سعر: ${high} | أدنى سعر: ${low}
-- سعر الافتتاح: ${latest.open} | الإغلاق: ${latest.close}
-- RSI الحالي: ${rsiValue || 'غير متوفر'}
-- MACD الحالي: ${lastMacd || 'غير متوفر'}
-
-قدم تحليلاً فنياً شاملاً يتضمن:
-1. الاتجاه العام (صاعد/هابط/جانبي) مع السبب
-2. أقرب مستويات الدعم والمقاومة
-3. قوة الزخم الحالية
-4. نقاط الدخول والخروج المقترحة
-5. التوصية النهائية (شراء قوي/شراء/انتظار/بيع/بيع قوي)
-6. مستوى المخاطرة (منخفض/متوسط/عالي)
-7. ملاحظة تحليلية مهمة`,
-        add_context_from_internet: false,
-        response_json_schema: {
-          type: "object",
-          properties: {
-            trend: { type: "string" },
-            trend_reason: { type: "string" },
-            support: { type: "number" },
-            resistance: { type: "number" },
-            momentum: { type: "string" },
-            entry_point: { type: "number" },
-            exit_point: { type: "number" },
-            recommendation: { type: "string" },
-            risk_level: { type: "string" },
-            note: { type: "string" },
-            confidence: { type: "number" }
-          }
-        }
-      });
-      setResult(res);
+      setResult({ _unavailable: true });
     } catch (err) {
       console.error(err);
     }
@@ -636,6 +630,11 @@ function AiPanel({ symbol, market, candles, onClose }) {
           <div className="flex flex-col items-center py-8 gap-2">
             <Loader2 className="w-7 h-7 text-[#d4a843] animate-spin" />
             <span className="text-xs text-[#787b86]">يحلل البيانات الفنية...</span>
+          </div>
+        ) : result?._unavailable ? (
+          <div className="flex flex-col items-center py-8 gap-2 text-center">
+            <Brain className="w-7 h-7 text-[#434651]" />
+            <p className="text-xs text-[#787b86]">تحليل الذكاء الاصطناعي غير متاح</p>
           </div>
         ) : result ? (
           <>
@@ -1030,6 +1029,7 @@ export default function ChartBoard() {
   const [market, setMarket] = useState("saudi");
   const [selectedStock, setSelectedStock] = useState({ symbol: "2222", name: "أرامكو", market: "saudi" });
   const [timeframe, setTimeframe] = useState("1D");
+  const [selectedRange, setSelectedRange] = useState(null); // null = auto (server default)
   const [chartType, setChartType] = useState("candlestick");
   const [candles, setCandles] = useState([]);
   const [showAI, setShowAI] = useState(false);
@@ -1113,13 +1113,22 @@ export default function ChartBoard() {
         })
         .catch(() => {});
     }
-    // Init Alpaca from saved config
+    // Init Alpaca from saved config - auto-reconnect if needed
     const alpacaSaved = alpacaConfig.getConfig();
-    if (alpacaSaved?.connected) {
+    if (alpacaSaved?.apiKey && alpacaSaved?.secretKey) {
       getAlpacaStatus()
         .then(status => {
           if (status.connected) {
             setAlpacaState(prev => ({ ...prev, connected: true, useAlpaca: true }));
+          } else {
+            // Auto-reconnect using saved keys
+            connectAlpaca(alpacaSaved.apiKey, alpacaSaved.secretKey, alpacaSaved.paper !== false)
+              .then(r => {
+                if (r.connected) {
+                  setAlpacaState(prev => ({ ...prev, connected: true, useAlpaca: true }));
+                }
+              })
+              .catch(() => {});
           }
         })
         .catch(() => {});
@@ -1246,9 +1255,47 @@ export default function ChartBoard() {
     if (!selectedStock) return;
     fetchCandles();
     const useRealtime = ibkrState.useIbkr || alpacaState.useAlpaca;
-    const iv = setInterval(fetchCandles, useRealtime ? 15000 : 10000);
+    // Live brokers refresh every 60s; Yahoo refreshes every 5 minutes (large history, no need to hammer)
+    const iv = setInterval(fetchCandles, useRealtime ? 60000 : 300000);
     return () => clearInterval(iv);
-  }, [selectedStock, market, timeframe, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
+  }, [selectedStock, market, timeframe, selectedRange, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
+
+  // ── Live tick → update last candle bar directly (sub-second) ──
+  useEffect(() => {
+    if (!selectedStock || !alpacaState.connected || !alpacaState.useAlpaca) return;
+
+    const sub = subscribeAlpacaQuotes(selectedStock.symbol, (tick) => {
+      if (!tick.price) return;
+
+      // 1. Update quote display
+      const q = parseAlpacaTick(tick);
+      if (q) setQuote(q);
+
+      // 2. Push directly to chart series — no React re-render needed
+      const series = mainSeriesRef.current;
+      if (!series) return;
+      const isIntraday = ["1min","5min","15min","30min","60min"].includes(selectedTf?.interval);
+      const now = isIntraday
+        ? Math.floor(Date.now() / 1000)
+        : new Date().toISOString().substring(0, 10);
+
+      try {
+        if (chartType === 'line' || chartType === 'area') {
+          series.update({ time: now, value: tick.price });
+        } else {
+          series.update({
+            time:  now,
+            open:  tick.open  || tick.price,
+            high:  tick.high  || tick.price,
+            low:   tick.low   || tick.price,
+            close: tick.price,
+          });
+        }
+      } catch { /* ignore time ordering errors */ }
+    });
+
+    return () => sub.close();
+  }, [selectedStock, alpacaState.connected, alpacaState.useAlpaca, chartType, selectedTf]);
 
   const fetchCandles = async () => {
     setLoading(true);
@@ -1322,14 +1369,10 @@ export default function ChartBoard() {
 
     // ── Standard Yahoo candles ──
     try {
-      const response = await base44.functions.invoke("marketData", {
-        action: "candles",
-        symbol: selectedStock.symbol,
-        market,
-        interval: selectedTf.interval,
-        limit: selectedTf.limit,
-      });
-      const rawCandles = response.data?.candles || [];
+      const rangeParam = selectedRange ? `&range=${encodeURIComponent(selectedRange)}` : '';
+      const response = await fetch(`/api/market/candles?symbol=${encodeURIComponent(selectedStock.symbol)}&market=${encodeURIComponent(market)}&interval=${encodeURIComponent(selectedTf.interval)}${rangeParam}`);
+      const data = await response.json();
+      const rawCandles = data?.candles || [];
       if (rawCandles.length === 0) { setLoading(false); return; }
 
       const isIntraday = ["1min", "5min", "15min", "30min", "60min"].includes(selectedTf.interval);
@@ -1507,7 +1550,7 @@ export default function ChartBoard() {
       if (rsiChartRef.current) { try { rsiChartRef.current.remove(); } catch (_) {} }
       const container = rsiContainerRef.current;
       const chart = createChart(container, {
-        layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10 },
+        layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10, attributionLogo: false },
         watermark: { visible: false },
         grid: { vertLines: { color: "#1e222d30" }, horzLines: { color: "#1e222d30" } },
         width: container.clientWidth, height: 100,
@@ -1532,7 +1575,7 @@ export default function ChartBoard() {
       if (macdChartRef.current) { try { macdChartRef.current.remove(); } catch (_) {} }
       const container = macdContainerRef.current;
       const chart = createChart(container, {
-        layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10 },
+        layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10, attributionLogo: false },
         watermark: { visible: false },
         grid: { vertLines: { color: "#1e222d30" }, horzLines: { color: "#1e222d30" } },
         width: container.clientWidth, height: 110,
@@ -1559,7 +1602,7 @@ export default function ChartBoard() {
       if (stochChartRef.current) { try { stochChartRef.current.remove(); } catch (_) {} }
       const container = stochContainerRef.current;
       const chart = createChart(container, {
-        layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10 },
+        layout: { background: { color: C.card }, textColor: C.dim, fontFamily: "'Tajawal', sans-serif", fontSize: 10, attributionLogo: false },
         watermark: { visible: false },
         grid: { vertLines: { color: "#1e222d30" }, horzLines: { color: "#1e222d30" } },
         width: container.clientWidth, height: 100,
@@ -1658,7 +1701,7 @@ export default function ChartBoard() {
           {/* Timeframes */}
           <div className="flex items-center gap-0">
             {TIMEFRAMES.map(tf => (
-              <button key={tf.value} onClick={() => setTimeframe(tf.value)}
+              <button key={tf.value} onClick={() => { setTimeframe(tf.value); setSelectedRange(null); }}
                 className={`px-2 py-1 text-[11px] font-semibold transition-all rounded ${
                   timeframe === tf.value ? "text-[#d1d4dc] bg-[#2962ff]/20" : "text-[#787b86] hover:text-[#d1d4dc]"
                 }`}>
@@ -1666,6 +1709,29 @@ export default function ChartBoard() {
               </button>
             ))}
           </div>
+
+          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+
+          {/* Range selector */}
+          {(() => {
+            const isIntraday = ["1min","5min","15min","30min","60min"].includes(selectedTf?.interval);
+            const isWeekly = selectedTf?.interval === "weekly";
+            const isMonthly = selectedTf?.interval === "monthly";
+            const rangeKey = isIntraday ? "intraday" : isWeekly ? "weekly" : isMonthly ? "monthly" : "daily";
+            const ranges = RANGE_OPTIONS[rangeKey];
+            return (
+              <div className="flex items-center gap-0">
+                {ranges.map(r => (
+                  <button key={r.value} onClick={() => setSelectedRange(selectedRange === r.value ? null : r.value)}
+                    className={`px-2 py-1 text-[10px] font-semibold transition-all rounded ${
+                      selectedRange === r.value ? "text-[#d4a843] bg-[#d4a843]/15" : "text-[#787b86] hover:text-[#d1d4dc]"
+                    }`}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
 
           <div className="w-px h-5 bg-[#2a2e39] mx-1" />
 

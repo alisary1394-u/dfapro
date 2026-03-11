@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
 import { TrendingUp, Search, Loader2, Target, BarChart3, Activity, AlertCircle, ChevronDown, ChevronUp, X } from "lucide-react";
 
 const POPULAR_STOCKS = [
@@ -92,70 +91,7 @@ export default function OptionsAnalysis() {
     setResult(null);
     const sym = inputVal.trim().toUpperCase();
     setSymbol(sym);
-    try {
-      const res = await base44.integrations.Core.InvokeLLM({
-        prompt: `أنت محلل أوبشن متخصص. قم بتحليل عقد الأوبشن التالي بشكل تفصيلي باللغة العربية:
-- الرمز: ${sym}
-- نوع الأوبشن: ${optionType === "call" ? "Call (حق الشراء)" : "Put (حق البيع)"}
-- تاريخ الانتهاء المقدر: ${expiry}
-- الموضع: ${strikeOffset === 0 ? "ATM (عند السعر)" : strikeOffset === -1 ? "ITM (داخل النطاق)" : strikeOffset === 1 ? "OTM (خارج النطاق)" : "الكل (ITM + ATM + OTM — قدم تحليلاً شاملاً لجميع المواضع)"}
-
-اعتمد على بيانات السوق الحالية وأعطِ تحليلاً شاملاً يتضمن:
-1. سعر الأوبشن المقدر (premium)
-2. سعر الإضراب المقترح (strike price)
-3. قيمة اليونانيات (delta, gamma, theta, vega, rho)
-4. التقلب الضمني المتوقع (IV%)
-5. نسبة الأمان (breakeven)
-6. التوصية: هل هو مناسب للشراء أم لا؟
-7. سيناريوهات الربح والخسارة
-8. نقاط القوة والمخاطر`,
-        add_context_from_internet: true,
-        response_json_schema: {
-          type: "object",
-          properties: {
-            symbol: { type: "string" },
-            current_price: { type: "number" },
-            strike_price: { type: "number" },
-            premium: { type: "number" },
-            expiry_days: { type: "number" },
-            iv_percent: { type: "number" },
-            breakeven: { type: "number" },
-            max_profit: { type: "string" },
-            max_loss: { type: "string" },
-            recommendation: { type: "string", enum: ["شراء قوي", "شراء", "محايد", "تجنب", "بيع"] },
-            recommendation_reason: { type: "string" },
-            greeks: {
-              type: "object",
-              properties: {
-                delta: { type: "number" },
-                gamma: { type: "number" },
-                theta: { type: "number" },
-                vega: { type: "number" },
-                rho: { type: "number" },
-              }
-            },
-            profit_scenarios: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  scenario: { type: "string" },
-                  price_change: { type: "string" },
-                  pnl: { type: "string" },
-                  probability: { type: "string" },
-                }
-              }
-            },
-            strengths: { type: "array", items: { type: "string" } },
-            risks: { type: "array", items: { type: "string" } },
-            summary: { type: "string" },
-          }
-        }
-      });
-      setResult(res);
-    } catch (e) {
-      setError("فشل التحليل، يرجى المحاولة مرة أخرى.");
-    }
+    setError("تحليل الذكاء الاصطناعي غير متاح.");
     setLoading(false);
   };
 

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { entities } from "@/api/entities";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, X, MoreVertical, Trash2, Edit2 } from "lucide-react";
 
@@ -19,7 +19,7 @@ export default function WatchlistTabs({ collections, activeCollectionId, onSelec
   const queryClient = useQueryClient();
 
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.WatchlistCollection.create(data),
+    mutationFn: (data) => entities.WatchlistCollection.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['watchlistCollections'] });
       setNewName("");
@@ -29,7 +29,7 @@ export default function WatchlistTabs({ collections, activeCollectionId, onSelec
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.WatchlistCollection.delete(id),
+    mutationFn: (id) => entities.WatchlistCollection.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['watchlistCollections'] });
     },

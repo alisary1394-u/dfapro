@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
 import { getQuote, getOverview } from "@/components/api/marketDataClient";
 import { X, Plus, Loader2, Trophy, TrendingUp, TrendingDown, Minus, Star } from "lucide-react";
 import SearchStock from "@/components/ui/SearchStock";
@@ -62,31 +61,7 @@ async function analyzeStock(stock) {
     ? `P/E: ${overview.pe_ratio}, EPS: ${overview.eps}, نمو: ${overview.revenue_growth}, بيتا: ${overview.beta}`
     : "";
 
-  const res = await base44.integrations.Core.InvokeLLM({
-    prompt: `حلل سهم ${stock.symbol} (${stock.name}) في ${stock.market === "saudi" ? "السوق السعودي" : "السوق الأمريكي"} بشكل مختصر.
-${ctx}
-${ovCtx}
-قدم: التقييم الشامل (0-100), التوصية, السعر المستهدف, نقطة القوة الرئيسية, نقطة الضعف الرئيسية, النقاط الفنية (0-100), النقاط الأساسية (0-100), مستوى المخاطرة.`,
-    add_context_from_internet: true,
-    response_json_schema: {
-      type: "object",
-      properties: {
-        overall_score: { type: "number" },
-        recommendation: { type: "string" },
-        target_price: { type: "number" },
-        current_price: { type: "number" },
-        technical_score: { type: "number" },
-        fundamental_score: { type: "number" },
-        risk_level: { type: "string" },
-        main_strength: { type: "string" },
-        main_weakness: { type: "string" },
-        upside_potential: { type: "number" },
-      }
-    }
-  });
-
-  if (quote && res) res.current_price = quote.price;
-  return { stock, result: res };
+  return { stock, result: null };
 }
 
 export default function MultiStockComparison() {

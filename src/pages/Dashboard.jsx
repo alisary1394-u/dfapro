@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
 import { getTopMovers, getForex, getCrypto, getBatchQuotes } from "@/components/api/marketDataClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";

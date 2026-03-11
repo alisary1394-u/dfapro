@@ -3,11 +3,13 @@ import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import StockSidebar from "@/components/layout/StockSidebar";
 import MarketOverviewBar from "@/components/ui/MarketOverviewBar";
+import { useAuth } from "@/lib/AuthContext";
 import {
   LayoutDashboard, Brain, Radar, Briefcase, Star, GitCompare,
   Bell, Zap, Menu, X, TrendingUp, Building2, Newspaper,
   Wallet, BarChart3, Activity, ChevronDown, ChevronUp,
-  Sparkles, Shield, LineChart, Target, BookOpen
+  Sparkles, Shield, LineChart, Target, BookOpen,
+  LogOut, Clock, AlertTriangle
 } from "lucide-react";
 
 const navGroups = [
@@ -110,6 +112,7 @@ function NavGroup({ group, currentPageName, onNavigate, defaultOpen = true }) {
 export default function Layout({ children, currentPageName }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const { logout, idleWarning, idleSecondsLeft, resetIdleTimer } = useAuth();
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -282,7 +285,14 @@ export default function Layout({ children, currentPageName }) {
               </div>
             </div>
           </div>
-          <div className="mt-3 flex items-center justify-between px-1">
+          <button
+            onClick={logout}
+            className="mt-3 w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-[#64748b] hover:text-red-400 hover:bg-red-900/10 rounded-xl transition-all group"
+          >
+            <LogOut className="w-4 h-4 group-hover:text-red-400 transition-colors" />
+            <span>تسجيل الخروج</span>
+          </button>
+          <div className="mt-2 flex items-center justify-between px-1">
             <span className="text-[10px] text-[#334155]">v2.0 Pro</span>
             <span className="text-[10px] text-[#334155]">السوق السعودي · الأمريكي</span>
           </div>
@@ -293,6 +303,31 @@ export default function Layout({ children, currentPageName }) {
       {['StockAnalysis', 'OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) && (
         <div className="hidden lg:block">
           <StockSidebar currentPageName={currentPageName} />
+        </div>
+      )}
+
+      {/* ── Idle Warning Toast ── */}
+      {idleWarning && (
+        <div className="fixed bottom-5 left-5 z-[999] flex items-center gap-3 bg-[#1a1200]/95 border border-amber-600/50 text-amber-100 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-lg animate-fade-in-up" dir="rtl">
+          <div className="flex items-center gap-2 text-amber-400 shrink-0">
+            <Clock className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-amber-300">سيتم تسجيل خروجك تلقائياً</p>
+            <p className="text-xs text-amber-500 mt-0.5">بسبب عدم النشاط — متبقي <span className="font-mono font-bold text-amber-300">{idleSecondsLeft}ث</span></p>
+          </div>
+          <button
+            onClick={resetIdleTimer}
+            className="mr-1 px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition-colors shrink-0"
+          >
+            استمر
+          </button>
+          <button
+            onClick={logout}
+            className="px-3 py-1.5 text-xs font-bold border border-amber-700/50 text-amber-400 hover:text-amber-300 rounded-xl transition-colors shrink-0"
+          >
+            خروج الآن
+          </button>
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { base44 } from "@/api/base44Client";
+import { entities } from "@/api/entities";
 import { Search, TrendingUp, ChevronDown, ChevronUp, FolderOpen } from "lucide-react";
 
 const STOCKS = {
@@ -52,7 +52,7 @@ function WatchlistItems({ collectionId, onSelectStock }) {
     const fetchItems = async () => {
       setLoading(true);
       try {
-        const watchlistItems = await base44.entities.WatchlistItem.filter({ watchlist_id: collectionId });
+        const watchlistItems = await entities.WatchlistItem.filter({ watchlist_id: collectionId });
         setItems(watchlistItems || []);
       } catch (err) {
         console.error("Error fetching watchlist items:", err);
@@ -96,7 +96,7 @@ export default function StockSidebar({ currentPageName }) {
     const fetchWatchlists = async () => {
       setLoadingWatchlists(true);
       try {
-        const collections = await base44.entities.WatchlistCollection.list();
+        const collections = await entities.WatchlistCollection.list();
         setWatchlists(collections || []);
       } catch (err) {
         console.error("Error fetching watchlists:", err);

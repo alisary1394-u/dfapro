@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, X, TrendingUp } from "lucide-react";
-import { base44 } from "@/api/base44Client";
 
 const popularStocks = {
   saudi: [

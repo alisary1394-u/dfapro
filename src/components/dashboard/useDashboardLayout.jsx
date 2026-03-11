@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { authClient } from "@/api/authClient";
 
 export const ALL_WIDGETS = [
   { id: "market_overview",   label: "نظرة عامة على السوق",  icon: "📊", defaultEnabled: true,  defaultOrder: 0 },
@@ -30,7 +30,7 @@ export function useDashboardLayout() {
   useEffect(() => {
     (async () => {
       try {
-        const user = await base44.auth.me();
+        const user = await authClient.me();
         if (user?.dashboard_layout) {
           // Merge saved layout with any new widgets
           const saved = user.dashboard_layout;
@@ -51,7 +51,7 @@ export function useDashboardLayout() {
 
   const saveLayout = async (newLayout, newMarket) => {
     try {
-      await base44.auth.updateMe({
+      await authClient.updateMe({
         dashboard_layout: newLayout,
         dashboard_market: newMarket ?? market,
       });

@@ -1,27 +1,29 @@
 // ═══════════════════════════════════════════════════════════════
-// ALPACA API Module - REST API client for Alpaca Markets
+// ALPACA API Module - REST API + WebSocket Real-Time Streaming
 // ═══════════════════════════════════════════════════════════════
-// Alpaca REST API: https://docs.alpaca.markets/reference
+import WebSocket from 'ws';
 
 let config = {
   apiKey: '',
   secretKey: '',
-  paper: true, // true = paper trading, false = live
+  paper: true,
 };
 
 const PAPER_URL = 'https://paper-api.alpaca.markets';
-const LIVE_URL = 'https://api.alpaca.markets';
-const DATA_URL = 'https://data.alpaca.markets';
+const LIVE_URL  = 'https://api.alpaca.markets';
+const DATA_URL  = 'https://data.alpaca.markets';
+// IEX = free feed (paper), SIP = paid feed (live)
+const WS_IEX = 'wss://stream.data.alpaca.markets/v2/iex';
+const WS_SIP = 'wss://stream.data.alpaca.markets/v2/sip';
 
-function getBaseUrl() {
-  return config.paper ? PAPER_URL : LIVE_URL;
-}
+function getBaseUrl()  { return config.paper ? PAPER_URL : LIVE_URL; }
+function getWsUrl()    { return config.paper ? WS_IEX : WS_SIP; }
 
 function getHeaders() {
   return {
-    'APCA-API-KEY-ID': config.apiKey,
+    'APCA-API-KEY-ID':     config.apiKey,
     'APCA-API-SECRET-KEY': config.secretKey,
-    'Content-Type': 'application/json',
+    'Content-Type':        'application/json',
   };
 }
 
@@ -39,26 +41,249 @@ async function alpacaFetch(url, options = {}) {
 
 // ── Connection ──
 export function connect(apiKey, secretKey, paper = true) {
-  config.apiKey = apiKey;
+  config.apiKey    = apiKey;
   config.secretKey = secretKey;
-  config.paper = paper;
+  config.paper     = paper;
+  _restartWs();   // (re)connect WebSocket stream immediately
 }
 
 export function disconnect() {
-  config.apiKey = '';
+  _closeWs();
+  config.apiKey    = '';
   config.secretKey = '';
-  config.paper = true;
+  config.paper     = true;
 }
 
-export function isConnected() {
-  return !!(config.apiKey && config.secretKey);
-}
+export function isConnected() { return !!(config.apiKey && config.secretKey); }
 
 export function getStatus() {
+  return { connected: isConnected(), paper: config.paper };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Real-Time WebSocket Stream
+// Single shared WS connection → fan-out to SSE subscribers
+// ═══════════════════════════════════════════════════════════════
+
+let _ws        = null;
+let _wsReady   = false;
+let _wsRetry   = null;
+let _subscribed = new Set();   // symbols currently subscribed on WS
+const _listeners = new Map();  // symbol → Set of callbacks
+
+// Last known snapshot per symbol (for new subscribers)
+const _lastTick = new Map();
+
+function _sendWs(msg) {
+  if (_ws && _ws.readyState === WebSocket.OPEN) {
+    _ws.send(JSON.stringify(msg));
+  }
+}
+
+function _resubscribeAll() {
+  const syms = [..._subscribed];
+  if (syms.length) {
+    _sendWs({ action: 'subscribe', trades: syms, quotes: syms });
+  }
+}
+
+function _closeWs() {
+  if (_wsRetry) { clearTimeout(_wsRetry); _wsRetry = null; }
+  if (_ws) {
+    try { _ws.close(); } catch {}
+    _ws     = null;
+    _wsReady = false;
+  }
+}
+
+function _restartWs() {
+  _closeWs();
+  if (!isConnected()) return;
+
+  const url = getWsUrl();
+  console.log('[Alpaca WS] Connecting to', url);
+  _ws = new WebSocket(url);
+
+  _ws.on('open', () => {
+    console.log('[Alpaca WS] Connected — authenticating');
+    _wsReady = false;
+    _ws.send(JSON.stringify({ action: 'auth', key: config.apiKey, secret: config.secretKey }));
+  });
+
+  _ws.on('message', (raw) => {
+    let msgs;
+    try { msgs = JSON.parse(raw.toString()); } catch { return; }
+    if (!Array.isArray(msgs)) msgs = [msgs];
+
+    for (const m of msgs) {
+      // Auth / subscription ack
+      if (m.T === 'success' && m.msg === 'authenticated') {
+        console.log('[Alpaca WS] Authenticated ✓');
+        _wsReady = true;
+        _resubscribeAll();
+        continue;
+      }
+      if (m.T === 'subscription') {
+        console.log('[Alpaca WS] Subscribed:', JSON.stringify(m));
+        continue;
+      }
+      if (m.T === 'error') {
+        console.warn('[Alpaca WS] Error msg:', m.msg, m.code);
+        continue;
+      }
+
+      // Trade update → T:"t"
+      if (m.T === 't' && m.S) {
+        const sym = m.S;
+        const prevTick = _lastTick.get(sym) || {};
+        const tick = {
+          symbol:   sym,
+          price:    m.p,
+          size:     m.s,
+          bid:      prevTick.bid   || 0,
+          ask:      prevTick.ask   || 0,
+          bidSize:  prevTick.bidSize || 0,
+          askSize:  prevTick.askSize || 0,
+          volume:   prevTick.volume || 0,
+          high:     prevTick.high   || 0,
+          low:      prevTick.low    || 0,
+          open:     prevTick.open   || 0,
+          prevClose:prevTick.prevClose || 0,
+          ts:       m.t,
+        };
+        _lastTick.set(sym, tick);
+        _emit(sym, tick);
+        continue;
+      }
+
+      // Quote update → T:"q"
+      if (m.T === 'q' && m.S) {
+        const sym = m.S;
+        const prev = _lastTick.get(sym) || {};
+        const tick = {
+          ...prev,
+          symbol: sym,
+          bid:    m.bp || prev.bid || 0,
+          ask:    m.ap || prev.ask || 0,
+          bidSize:m.bs || prev.bidSize || 0,
+          askSize:m.as || prev.askSize || 0,
+          ts:     m.t,
+        };
+        _lastTick.set(sym, tick);
+        _emit(sym, tick);
+        continue;
+      }
+
+      // Minute bar → T:"b"
+      if (m.T === 'b' && m.S) {
+        const sym = m.S;
+        const prev = _lastTick.get(sym) || {};
+        const tick = {
+          ...prev,
+          symbol:  sym,
+          high:    m.h > (prev.high || 0)  ? m.h : (prev.high || 0),
+          low:     m.l < (prev.low || 9e9) ? m.l : (prev.low || m.l),
+          open:    prev.open || m.o,
+          volume:  m.v,
+          price:   m.c || prev.price || 0,
+          ts:      m.t,
+        };
+        _lastTick.set(sym, tick);
+        _emit(sym, tick);
+        continue;
+      }
+    }
+  });
+
+  _ws.on('close', (code) => {
+    console.warn('[Alpaca WS] Disconnected', code, '— retry in 5s');
+    _wsReady = false;
+    if (isConnected()) {
+      _wsRetry = setTimeout(_restartWs, 5000);
+    }
+  });
+
+  _ws.on('error', (err) => {
+    console.error('[Alpaca WS] Error:', err.message);
+    try { _ws.close(); } catch {}
+  });
+}
+
+function _emit(symbol, tick) {
+  const cbs = _listeners.get(symbol);
+  if (cbs) cbs.forEach(cb => { try { cb(tick); } catch {} });
+}
+
+// ── Snapshot fallback for initial data (before WS ticks arrive) ──
+async function _seedFromSnapshot(symbol) {
+  try {
+    const snap = await getSnapshot(symbol);
+    const trade  = snap.latestTrade  || {};
+    const quote  = snap.latestQuote  || {};
+    const daily  = snap.dailyBar     || {};
+    const prev   = snap.prevDailyBar || {};
+    const tick = {
+      symbol,
+      price:    trade.p  || daily.c  || 0,
+      bid:      quote.bp || 0,
+      ask:      quote.ap || 0,
+      bidSize:  quote.bs || 0,
+      askSize:  quote.as || 0,
+      volume:   daily.v  || 0,
+      high:     daily.h  || 0,
+      low:      daily.l  || 0,
+      open:     daily.o  || 0,
+      prevClose:prev.c   || 0,
+    };
+    _lastTick.set(symbol, tick);
+    _emit(symbol, tick);
+  } catch {}
+}
+
+// ── Public subscribe/unsubscribe ──
+export function subscribeQuotes(symbol, callback) {
+  if (!_listeners.has(symbol)) _listeners.set(symbol, new Set());
+  _listeners.get(symbol).add(callback);
+
+  // Send last known tick immediately if available
+  const last = _lastTick.get(symbol);
+  if (last) { try { callback(last); } catch {} }
+
+  // Subscribe on WebSocket if not already
+  if (!_subscribed.has(symbol)) {
+    _subscribed.add(symbol);
+    if (_wsReady) {
+      _sendWs({ action: 'subscribe', trades: [symbol], quotes: [symbol] });
+    }
+    // Seed with snapshot for instant initial price
+    _seedFromSnapshot(symbol);
+  }
+
   return {
-    connected: isConnected(),
-    paper: config.paper,
+    id: symbol + '_' + Date.now(),
+    unsubscribe: () => {
+      const cbs = _listeners.get(symbol);
+      if (cbs) {
+        cbs.delete(callback);
+        if (cbs.size === 0) {
+          _listeners.delete(symbol);
+          _subscribed.delete(symbol);
+          if (_wsReady) {
+            _sendWs({ action: 'unsubscribe', trades: [symbol], quotes: [symbol] });
+          }
+        }
+      }
+    },
   };
+}
+
+export function unsubscribeAll() {
+  _subscribed.clear();
+  _listeners.clear();
+  _lastTick.clear();
+  if (_wsReady) {
+    _sendWs({ action: 'unsubscribe', trades: ['*'], quotes: ['*'] });
+  }
 }
 
 // ── Account ──
@@ -135,53 +360,6 @@ export async function getBars(symbol, interval = 'daily') {
     close: bar.c,
     volume: bar.v,
   }));
-}
-
-// ── Market Data: SSE Streaming (simulated via polling) ──
-const streamIntervals = new Map();
-
-export function subscribeQuotes(symbol, callback) {
-  const id = symbol + '_' + Date.now();
-
-  const poll = async () => {
-    try {
-      const snapshot = await getSnapshot(symbol);
-      callback({
-        symbol,
-        price: snapshot.latestTrade?.p || snapshot.minuteBar?.c || 0,
-        bid: snapshot.latestQuote?.bp || 0,
-        ask: snapshot.latestQuote?.ap || 0,
-        bidSize: snapshot.latestQuote?.bs || 0,
-        askSize: snapshot.latestQuote?.as || 0,
-        volume: snapshot.dailyBar?.v || 0,
-        high: snapshot.dailyBar?.h || 0,
-        low: snapshot.dailyBar?.l || 0,
-        open: snapshot.dailyBar?.o || 0,
-        prevClose: snapshot.prevDailyBar?.c || 0,
-      });
-    } catch (err) {
-      console.error('[Alpaca] Polling error:', err.message);
-    }
-  };
-
-  poll(); // immediate first call
-  const iv = setInterval(poll, 3000); // poll every 3s
-  streamIntervals.set(id, iv);
-
-  return {
-    id,
-    unsubscribe: () => {
-      clearInterval(iv);
-      streamIntervals.delete(id);
-    },
-  };
-}
-
-export function unsubscribeAll() {
-  for (const [id, iv] of streamIntervals) {
-    clearInterval(iv);
-  }
-  streamIntervals.clear();
 }
 
 // ── Asset Search ──

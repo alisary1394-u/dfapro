@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { TrendingUp, TrendingDown, Trash2, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { entities } from "@/api/entities";
 
 export default function TradeRow({ trade, onUpdate }) {
   const [expanded, setExpanded] = useState(false);
@@ -21,13 +21,13 @@ export default function TradeRow({ trade, onUpdate }) {
     if (!closePrice) return;
     const cp = parseFloat(closePrice);
     const realizedPnl = isBuy ? (cp - trade.entry_price) * trade.shares : (trade.entry_price - cp) * trade.shares;
-    await base44.entities.VirtualTrade.update(trade.id, { status: "closed", close_price: cp, current_price: cp });
+    await entities.VirtualTrade.update(trade.id, { status: "closed", close_price: cp, current_price: cp });
     setClosing(false);
     onUpdate();
   };
 
   const handleDelete = async () => {
-    await base44.entities.VirtualTrade.delete(trade.id);
+    await entities.VirtualTrade.delete(trade.id);
     onUpdate();
   };
 

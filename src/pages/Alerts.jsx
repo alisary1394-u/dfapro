@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { entities } from "@/api/entities";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import SearchStock from "@/components/ui/SearchStock";
 import {
@@ -28,21 +28,21 @@ export default function Alerts() {
 
   const { data: alerts = [] } = useQuery({
     queryKey: ['alerts'],
-    queryFn: () => base44.entities.Alert.list(),
+    queryFn: () => entities.Alert.list(),
   });
 
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.Alert.create(data),
+    mutationFn: (data) => entities.Alert.create(data),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['alerts'] }); setShowAdd(false); setForm({ symbol: "", name: "", market: "saudi", condition: "above", price: "" }); }
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.Alert.delete(id),
+    mutationFn: (id) => entities.Alert.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   });
 
   const toggleMutation = useMutation({
-    mutationFn: ({ id, is_active }) => base44.entities.Alert.update(id, { is_active: !is_active }),
+    mutationFn: ({ id, is_active }) => entities.Alert.update(id, { is_active: !is_active }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   });
 

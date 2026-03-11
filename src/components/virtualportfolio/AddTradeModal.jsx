@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { X, Search, Plus } from "lucide-react";
-import { base44 } from "@/api/base44Client";
+import { entities } from "@/api/entities";
 
 const POPULAR_STOCKS = [
   { symbol: "AAPL", name: "Apple", market: "us" }, { symbol: "TSLA", name: "Tesla", market: "us" },
@@ -45,7 +45,7 @@ export default function AddTradeModal({ onClose, onSave }) {
       status: "open",
       notes: form.notes,
     };
-    await base44.entities.VirtualTrade.create(trade);
+    await entities.VirtualTrade.create(trade);
     setSaving(false);
     onSave();
     onClose();
