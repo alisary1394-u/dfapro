@@ -11,7 +11,7 @@ const ALPACA_STORAGE_KEY = 'alpaca_config';
 
 const getConfig = () => {
   try {
-    const raw = sessionStorage.getItem(ALPACA_STORAGE_KEY);
+    const raw = localStorage.getItem(ALPACA_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -19,11 +19,11 @@ const getConfig = () => {
 };
 
 const saveConfig = (config) => {
-  sessionStorage.setItem(ALPACA_STORAGE_KEY, JSON.stringify(config));
+  localStorage.setItem(ALPACA_STORAGE_KEY, JSON.stringify(config));
 };
 
 const clearConfig = () => {
-  sessionStorage.removeItem(ALPACA_STORAGE_KEY);
+  localStorage.removeItem(ALPACA_STORAGE_KEY);
 };
 
 // ─── API Helpers ─────────────────────────────────────────────
