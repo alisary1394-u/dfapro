@@ -10,6 +10,11 @@ import {
   parseAlpacaQuote,
 } from '@/components/api/alpacaClient';
 
+const US_MOVER_UNIVERSE = [
+  'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'META', 'GOOGL', 'AMD', 'NFLX', 'JPM',
+  'BAC', 'V', 'WMT', 'DIS', 'INTC', 'COIN', 'PLTR', 'SOFI', 'CRM', 'ORCL'
+];
+
 const apiFetch = async (path) => {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`API ${res.status}`);
@@ -54,6 +59,33 @@ export const getNews = async (symbol, market) => {
 };
 
 export const getTopMovers = async (market = 'saudi') => {
+  const broker = getActiveBroker();
+  if (broker === 'alpaca' && (market === 'us' || market === 'USA')) {
+    try {
+      const snapshots = await Promise.allSettled(US_MOVER_UNIVERSE.map((symbol) => getAlpacaSnapshot(symbol)));
+      const rows = snapshots.map((s, idx) => {
+        if (s.status !== 'fulfilled') return null;
+        const parsed = parseAlpacaQuote(s.value);
+        if (!parsed || !parsed.price) return null;
+        return {
+          symbol: US_MOVER_UNIVERSE[idx],
+          name: US_MOVER_UNIVERSE[idx],
+          price: parsed.price,
+          change: parsed.change_percent || 0,
+          market: 'us',
+        };
+      }).filter(Boolean);
+
+      const sorted = [...rows].sort((a, b) => b.change - a.change);
+      return {
+        gainers: sorted.filter((s) => s.change > 0).slice(0, 10),
+        losers: sorted.filter((s) => s.change < 0).sort((a, b) => a.change - b.change).slice(0, 10),
+      };
+    } catch {
+      // fall through to backend proxy
+    }
+  }
+
   try {
     const data = await apiFetch(`/api/market/top-movers?market=${encodeURIComponent(market)}`);
     return data;

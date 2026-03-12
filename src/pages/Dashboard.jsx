@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse } from "@/components/api/marketDataClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import { useBroker } from "@/lib/BrokerContext";
 import MarketOverviewBar from "@/components/ui/MarketOverviewBar";
 import NextSessionPredictions from "@/components/dashboard/NextSessionPredictions";
 import StockCard from "@/components/ui/StockCard";
@@ -52,6 +53,7 @@ const aiInsightsByMarket = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { broker } = useBroker();
   const { layout, market, loaded, toggleWidget, moveWidget, updateMarket } = useDashboardLayout();
   const [liveMovers, setLiveMovers] = useState(null);
   const [forex, setForex] = useState(null);
@@ -62,11 +64,8 @@ export default function Dashboard() {
   // Fetch live data based on selected market
   useEffect(() => {
     const fetchAll = () => {
-      getTopMovers(market).then(setLiveMovers).catch(() => {});
-      getForex("USD", "SAR").then(setForex).catch(() => {});
-      getCrypto("BTC", "USD").then(setCrypto).catch(() => {});
-      getMarketPulse().then(setMarketPulse).catch(() => {});
-      getTopMovers(market).then(data => {
+      getTopMovers(market).then((data) => {
+        setLiveMovers(data);
         if (data?.gainers && data?.losers) {
           const allStocks = [...(data.gainers || []), ...(data.losers || [])];
           const up = allStocks.filter(s => s.change > 0).length;
@@ -74,11 +73,15 @@ export default function Dashboard() {
           setLiveStats({ up, down, total: allStocks.length });
         }
       }).catch(() => {});
+      getForex("USD", "SAR").then(setForex).catch(() => {});
+      getCrypto("BTC", "USD").then(setCrypto).catch(() => {});
+      getMarketPulse().then(setMarketPulse).catch(() => {});
     };
     fetchAll();
-    const iv = setInterval(fetchAll, 10000);
+    const refreshMs = broker?.active ? 5000 : 12000;
+    const iv = setInterval(fetchAll, refreshMs);
     return () => clearInterval(iv);
-  }, [market]);
+  }, [market, broker?.active]);
 
   const gainers = liveMovers?.gainers?.length
     ? liveMovers.gainers.slice(0, 4)
@@ -423,6 +426,12 @@ export default function Dashboard() {
           <p className="text-sm text-[#475569] mt-1 flex items-center gap-1.5">
             <CalendarDays className="w-3.5 h-3.5" />
             {today}
+          </p>
+          <p className="text-xs mt-2 flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${broker?.active ? "bg-emerald-400 animate-pulse" : "bg-[#475569]"}`} />
+            <span className={broker?.active ? "text-emerald-400" : "text-[#64748b]"}>
+              مصدر البيانات: {broker?.active === 'alpaca' ? `Alpaca ${broker?.alpacaPaper ? '(ورقي)' : '(حقيقي)'}` : broker?.active === 'ibkr' ? 'IBKR' : 'Yahoo Proxy'}
+            </span>
           </p>
         </div>
         <div className="flex items-center gap-3">

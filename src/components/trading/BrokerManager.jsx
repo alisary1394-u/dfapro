@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { authClient } from "@/api/authClient";
 import { useAuth } from "@/lib/AuthContext";
+import { useBroker } from "@/lib/BrokerContext";
 import {
   connectToGateway,
   disconnectFromGateway,
@@ -25,6 +26,7 @@ import {
 
 export default function BrokerManager() {
   const { user, setUser } = useAuth();
+  const { setAlpacaActive, setIbkrActive } = useBroker();
 
   // ── IBKR State ──
   const [ibkrConnected, setIbkrConnected] = useState(false);
@@ -69,6 +71,7 @@ export default function BrokerManager() {
       .then(s => {
         if (s.connected) {
           setIbkrConnected(true);
+          setIbkrActive(true);
           loadIbkrData();
         }
       })
@@ -77,6 +80,7 @@ export default function BrokerManager() {
       .then(s => {
         if (s.connected) {
           setAlpacaConnected(true);
+          setAlpacaActive(true, alpacaPaper);
           loadAlpacaData();
         } else {
           // Auto-reconnect if keys are saved in localStorage
@@ -86,6 +90,7 @@ export default function BrokerManager() {
               .then(r => {
                 if (r.connected) {
                   setAlpacaConnected(true);
+                  setAlpacaActive(true, saved.paper !== false);
                   loadAlpacaData();
                 }
               })
@@ -94,7 +99,7 @@ export default function BrokerManager() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [alpacaPaper, setAlpacaActive, setIbkrActive]);
 
   useEffect(() => {
     if (!user) return;
@@ -175,6 +180,7 @@ export default function BrokerManager() {
       const result = await connectToGateway(ibkrHost, Number(ibkrPort), 0);
       if (result.connected) {
         setIbkrConnected(true);
+        setIbkrActive(true);
         ibkrConfig.saveConfig({ host: ibkrHost, port: Number(ibkrPort), connected: true });
         await new Promise(r => setTimeout(r, 1500));
         await loadIbkrData();
@@ -188,6 +194,7 @@ export default function BrokerManager() {
   const handleIbkrDisconnect = async () => {
     try { await disconnectFromGateway(); } catch {}
     ibkrConfig.clearConfig();
+    setIbkrActive(false);
     setIbkrConnected(false);
     setIbkrAccounts([]);
     setIbkrSummary(null);
@@ -217,6 +224,7 @@ export default function BrokerManager() {
       const result = await connectAlpaca(alpacaApiKey, alpacaSecretKey, alpacaPaper);
       if (result.connected) {
         setAlpacaConnected(true);
+        setAlpacaActive(true, alpacaPaper);
         alpacaConfig.saveConfig({ apiKey: alpacaApiKey, secretKey: alpacaSecretKey, paper: alpacaPaper, connected: true });
         await loadAlpacaData();
       }
@@ -229,6 +237,7 @@ export default function BrokerManager() {
   const handleAlpacaDisconnect = async () => {
     try { await disconnectAlpaca(); } catch {}
     alpacaConfig.clearConfig();
+    setAlpacaActive(false, alpacaPaper);
     setAlpacaConnected(false);
     setAlpacaAccount(null);
     setAlpacaPositions([]);
