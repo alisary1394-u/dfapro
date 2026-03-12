@@ -23,7 +23,7 @@
       "filter": ["**/*"]
     }
   ],
-  "asar": false,
+  "asar": true,
   "win": {
     "target": [
       {
@@ -44,10 +44,15 @@
     "artifactName": "DFA-Pro-Setup-${version}.${ext}"
   },
   "mac": {
-    "target": ["dmg"],
+    "target": [
+      {
+        "target": "zip",
+        "arch": ["x64"]
+      }
+    ],
     "icon": "electron/icon.png",
     "category": "public.app-category.finance",
-    "artifactName": "DFA-Pro-${version}.${ext}"
+    "artifactName": "DFA-Pro-${version}-mac.${ext}"
   },
   "linux": {
     "target": ["AppImage", "deb"],
