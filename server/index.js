@@ -696,7 +696,11 @@ const publicUser = (user) => ({
   dashboard_market: user.dashboard_market ?? 'saudi',
   alpaca_api_key: user.alpaca_api_key ?? '',
   alpaca_secret_key: user.alpaca_secret_key ?? '',
-  alpaca_base_url: user.alpaca_base_url ?? ''
+  alpaca_base_url: user.alpaca_base_url ?? '',
+  market_data_provider: user.market_data_provider ?? 'yahoo',
+  polygon_api_key: user.polygon_api_key ?? '',
+  tradier_api_key: user.tradier_api_key ?? '',
+  tadawul_api_key: user.tadawul_api_key ?? ''
 });
 
 const ensureAdminUser = async () => {
@@ -721,7 +725,11 @@ const ensureAdminUser = async () => {
     created_at: new Date().toISOString(),
     alpaca_api_key: '',
     alpaca_secret_key: '',
-    alpaca_base_url: ''
+    alpaca_base_url: '',
+    market_data_provider: 'yahoo',
+    polygon_api_key: '',
+    tradier_api_key: '',
+    tadawul_api_key: ''
   });
   await db.write();
 };
@@ -1114,7 +1122,11 @@ app.post('/api/auth/register', async (req, res) => {
     created_at: new Date().toISOString(),
     alpaca_api_key: '',
     alpaca_secret_key: '',
-    alpaca_base_url: ''
+    alpaca_base_url: '',
+    market_data_provider: 'yahoo',
+    polygon_api_key: '',
+    tradier_api_key: '',
+    tadawul_api_key: ''
   };
 
   db.data.users.push(user);
@@ -1168,7 +1180,11 @@ app.patch('/api/auth/me', authRequired, async (req, res) => {
     'dashboard_market',
     'alpaca_api_key',
     'alpaca_secret_key',
-    'alpaca_base_url'
+    'alpaca_base_url',
+    'market_data_provider',
+    'polygon_api_key',
+    'tradier_api_key',
+    'tadawul_api_key'
   ];
 
   for (const field of allowedFields) {

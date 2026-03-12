@@ -3,6 +3,8 @@ import {
   Link2, Unlink2, Zap, AlertCircle, CheckCircle2,
   Loader2, Eye, EyeOff, Power, PowerOff, Key, Wifi, WifiOff
 } from "lucide-react";
+import { authClient } from "@/api/authClient";
+import { useAuth } from "@/lib/AuthContext";
 import {
   connectToGateway,
   disconnectFromGateway,
@@ -22,6 +24,8 @@ import {
 } from "@/components/api/alpacaClient";
 
 export default function BrokerManager() {
+  const { user, setUser } = useAuth();
+
   // ── IBKR State ──
   const [ibkrConnected, setIbkrConnected] = useState(false);
   const [ibkrLoading, setIbkrLoading] = useState(false);
@@ -44,6 +48,20 @@ export default function BrokerManager() {
   const [alpacaSecretKey, setAlpacaSecretKey] = useState(alpacaSaved?.secretKey || "");
   const [alpacaPaper, setAlpacaPaper] = useState(alpacaSaved?.paper !== false);
   const [showSecret, setShowSecret] = useState(false);
+
+  // ── Market Data Provider Keys ──
+  const [provider, setProvider] = useState("yahoo");
+  const [polygonKey, setPolygonKey] = useState("");
+  const [tradierKey, setTradierKey] = useState("");
+  const [tadawulKey, setTadawulKey] = useState("");
+  const [showPolygonKey, setShowPolygonKey] = useState(false);
+  const [showTradierKey, setShowTradierKey] = useState(false);
+  const [showTadawulKey, setShowTadawulKey] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
+  const [alpacaSaveLoading, setAlpacaSaveLoading] = useState(false);
+  const [alpacaSaveStatus, setAlpacaSaveStatus] = useState("");
 
   // ── Init: Check existing connections, auto-reconnect if keys saved ──
   useEffect(() => {
@@ -77,6 +95,59 @@ export default function BrokerManager() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    setAlpacaApiKey(user.alpaca_api_key || "");
+    setAlpacaSecretKey(user.alpaca_secret_key || "");
+    setProvider(user.market_data_provider || "yahoo");
+    setPolygonKey(user.polygon_api_key || "");
+    setTradierKey(user.tradier_api_key || "");
+    setTadawulKey(user.tadawul_api_key || "");
+  }, [user]);
+
+  const handleSaveMarketKeys = async () => {
+    setSaveLoading(true);
+    setSaveError("");
+    setSaveSuccess("");
+    try {
+      const updated = await authClient.updateMe({
+        market_data_provider: provider,
+        polygon_api_key: polygonKey.trim(),
+        tradier_api_key: tradierKey.trim(),
+        tadawul_api_key: tadawulKey.trim(),
+      });
+      setUser(updated);
+      setSaveSuccess("تم حفظ المفاتيح بنجاح. أي قيمة جديدة استبدلت القيمة القديمة.");
+    } catch {
+      setSaveError("تعذر حفظ المفاتيح الآن. حاول مرة أخرى.");
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  const handleSaveAlpacaKeys = async () => {
+    setAlpacaSaveLoading(true);
+    setAlpacaSaveStatus("");
+    try {
+      const updated = await authClient.updateMe({
+        alpaca_api_key: alpacaApiKey.trim(),
+        alpaca_secret_key: alpacaSecretKey.trim(),
+      });
+      setUser(updated);
+      alpacaConfig.saveConfig({
+        apiKey: alpacaApiKey.trim(),
+        secretKey: alpacaSecretKey.trim(),
+        paper: alpacaPaper,
+        connected: alpacaConnected,
+      });
+      setAlpacaSaveStatus("تم حفظ مفاتيح Alpaca بنجاح واستبدال القيم القديمة.");
+    } catch {
+      setAlpacaSaveStatus("تعذر حفظ مفاتيح Alpaca حاليا.");
+    } finally {
+      setAlpacaSaveLoading(false);
+    }
+  };
 
   // ── IBKR Functions ──
   const loadIbkrData = async () => {
@@ -356,6 +427,21 @@ export default function BrokerManager() {
                 <span className={`absolute top-[3px] w-[16px] h-[16px] bg-white rounded-full transition-all shadow-sm ${alpacaPaper ? "right-[3px]" : "left-[3px]"}`} />
               </div>
             </div>
+
+            <button
+              onClick={handleSaveAlpacaKeys}
+              disabled={alpacaSaveLoading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#d4a843]/20 border border-[#d4a843]/30 text-[#d4a843] text-sm font-bold hover:bg-[#d4a843]/30 disabled:opacity-60 transition-all"
+            >
+              {alpacaSaveLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              {alpacaSaveLoading ? "جاري الحفظ..." : "حفظ مفاتيح Alpaca"}
+            </button>
+
+            {alpacaSaveStatus && (
+              <p className={`text-xs ${alpacaSaveStatus.includes("بنجاح") ? "text-emerald-400" : "text-red-400"}`}>
+                {alpacaSaveStatus}
+              </p>
+            )}
           </div>
         )}
 
@@ -422,6 +508,115 @@ export default function BrokerManager() {
               <li>أنشئ مفتاح API جديد</li>
               <li>أدخل API Key و Secret Key أعلاه واضغط <span className="text-emerald-400 font-bold">تشغيل</span></li>
             </ol>
+          </div>
+        )}
+      </div>
+
+      {/* ═══════ Market Data Providers Card ═══════ */}
+      <div className="bg-[#151c2c] border border-[#1e293b] rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-[#d4a843]/15">
+              <Key className="w-5 h-5 text-[#d4a843]" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">مفاتيح مزود البيانات المباشرة</h3>
+              <p className="text-xs text-[#94a3b8]">احفظ المفاتيح فوريا. التعديل يستبدل المفتاح القديم تلقائيا.</p>
+            </div>
+          </div>
+          <button
+            onClick={handleSaveMarketKeys}
+            disabled={saveLoading}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-bold hover:bg-emerald-500/30 disabled:opacity-60 transition-all"
+          >
+            {saveLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            {saveLoading ? "جاري الحفظ..." : "حفظ"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="text-xs text-[#64748b] block mb-1.5">المزود الافتراضي</label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="w-full bg-[#0a0e17] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#d4a843]/50"
+            >
+              <option value="yahoo">Yahoo (افتراضي)</option>
+              <option value="polygon">Polygon</option>
+              <option value="tradier">Tradier</option>
+              <option value="tadawul">Tadawul</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-[#64748b] block mb-1.5">Polygon API Key</label>
+            <div className="flex gap-2">
+              <input
+                type={showPolygonKey ? "text" : "password"}
+                value={polygonKey}
+                onChange={(e) => setPolygonKey(e.target.value)}
+                placeholder="POLYGON_API_KEY"
+                className="flex-1 bg-[#0a0e17] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-[#d4a843]/50"
+                dir="ltr"
+                autoComplete="off"
+              />
+              <button onClick={() => setShowPolygonKey(!showPolygonKey)} className="p-2 rounded-lg bg-[#1e293b] hover:bg-[#293548] transition-colors">
+                {showPolygonKey ? <EyeOff className="w-4 h-4 text-[#94a3b8]" /> : <Eye className="w-4 h-4 text-[#94a3b8]" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-[#64748b] block mb-1.5">Tradier API Key</label>
+            <div className="flex gap-2">
+              <input
+                type={showTradierKey ? "text" : "password"}
+                value={tradierKey}
+                onChange={(e) => setTradierKey(e.target.value)}
+                placeholder="TRADIER_API_KEY"
+                className="flex-1 bg-[#0a0e17] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-[#d4a843]/50"
+                dir="ltr"
+                autoComplete="off"
+              />
+              <button onClick={() => setShowTradierKey(!showTradierKey)} className="p-2 rounded-lg bg-[#1e293b] hover:bg-[#293548] transition-colors">
+                {showTradierKey ? <EyeOff className="w-4 h-4 text-[#94a3b8]" /> : <Eye className="w-4 h-4 text-[#94a3b8]" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-[#64748b] block mb-1.5">Tadawul / Mubasher Key</label>
+            <div className="flex gap-2">
+              <input
+                type={showTadawulKey ? "text" : "password"}
+                value={tadawulKey}
+                onChange={(e) => setTadawulKey(e.target.value)}
+                placeholder="TADAWUL_API_KEY"
+                className="flex-1 bg-[#0a0e17] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-[#d4a843]/50"
+                dir="ltr"
+                autoComplete="off"
+              />
+              <button onClick={() => setShowTadawulKey(!showTadawulKey)} className="p-2 rounded-lg bg-[#1e293b] hover:bg-[#293548] transition-colors">
+                {showTadawulKey ? <EyeOff className="w-4 h-4 text-[#94a3b8]" /> : <Eye className="w-4 h-4 text-[#94a3b8]" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {saveError && (
+          <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl mt-4">
+            <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-red-400">{saveError}</p>
+          </div>
+        )}
+
+        {saveSuccess && (
+          <div className="flex items-start gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl mt-4">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-emerald-400">{saveSuccess}</p>
           </div>
         )}
       </div>
