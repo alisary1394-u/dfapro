@@ -51,6 +51,20 @@ const aiInsightsByMarket = {
   us: "قطاع التقنية يقود المؤشرات مع قوة أداء أسهم الذكاء الاصطناعي. فرص في القطاع الصحي وأسهم القيمة.",
 };
 
+const regimeLabelAr = {
+  'Risk-On': 'إقبال على المخاطر',
+  'Risk-Off': 'عزوف عن المخاطر',
+  'Neutral': 'محايد',
+};
+
+const sourceLabelAr = (broker) => {
+  if (broker?.active === 'alpaca') {
+    return `Alpaca ${broker?.alpacaPaper ? '(ورقي)' : '(حقيقي)'}`;
+  }
+  if (broker?.active === 'ibkr') return 'IBKR (تدفّق مباشر)';
+  return 'Yahoo (مزود افتراضي)';
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { broker } = useBroker();
@@ -94,6 +108,7 @@ export default function Dashboard() {
   const isLive = !!liveMovers?.gainers?.length;
 
   const vixIndicator = marketPulse?.indicators?.find((i) => i.key === 'vix');
+  const regimeAr = regimeLabelAr[marketPulse?.regime] || 'محايد';
   const liquidityScore = (() => {
     if (!liveMovers?.gainers || !liveMovers?.losers) return null;
     const depth = (liveMovers.gainers.length || 0) + (liveMovers.losers.length || 0);
@@ -165,47 +180,47 @@ export default function Dashboard() {
       <div key="market_cockpit" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Radar className="w-5 h-5 text-[#d4a843]" /> Market Cockpit
+            <Radar className="w-5 h-5 text-[#d4a843]" /> غرفة قيادة السوق
           </h2>
           <span className="text-[11px] px-2 py-1 rounded-lg bg-[#1a2540] text-[#94a3b8]">
-            {broker?.active ? 'Broker-linked' : 'Proxy-linked'}
+            {broker?.active ? 'مربوط بالوسيط' : 'مربوط بالمزود الافتراضي'}
           </span>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {[
             {
-              label: 'Regime',
-              value: marketPulse?.regime || 'Neutral',
-              sub: 'Risk State',
+              label: 'حالة السوق',
+              value: regimeAr,
+              sub: 'نظام المخاطر',
               icon: ShieldCheck,
               color: marketPulse?.regime === 'Risk-On' ? '#10b981' : marketPulse?.regime === 'Risk-Off' ? '#ef4444' : '#d4a843',
             },
             {
-              label: 'Breadth',
+              label: 'اتساع السوق',
               value: marketPulse?.breadth ? `${marketPulse.breadth.advancers}/${marketPulse.breadth.decliners}` : '—',
-              sub: 'A/D',
+              sub: 'صاعد/هابط',
               icon: Waves,
               color: '#3b82f6',
             },
             {
-              label: 'VIX',
+              label: 'مؤشر الخوف VIX',
               value: vixIndicator?.value != null ? vixIndicator.value.toFixed(2) : '—',
-              sub: vixIndicator?.change_percent != null ? `${vixIndicator.change_percent}%` : 'Volatility',
+              sub: vixIndicator?.change_percent != null ? `${vixIndicator.change_percent}%` : 'التقلب',
               icon: Activity,
               color: (vixIndicator?.value || 0) > 22 ? '#ef4444' : '#10b981',
             },
             {
-              label: 'Liquidity',
+              label: 'السيولة',
               value: liquidityScore != null ? `${liquidityScore}/100` : '—',
-              sub: 'Scan Depth',
+              sub: 'عمق المسح',
               icon: BarChart3,
               color: '#06b6d4',
             },
             {
-              label: 'Universe',
+              label: 'تغطية الكون',
               value: universeStats?.total ? universeStats.total.toLocaleString() : '—',
-              sub: broker?.active === 'alpaca' ? 'Broker Companies' : 'Provider Universe',
+              sub: broker?.active === 'alpaca' ? 'شركات الوسيط' : 'كون المزود',
               icon: Globe2,
               color: '#f59e0b',
             },
@@ -268,8 +283,8 @@ export default function Dashboard() {
           { label: "الأكثر ارتفاعاً", value: gainers?.[0]?.symbol || "—", sub: gainers?.[0]?.name || "", icon: Activity, color: "#d4a843", accent: "rgba(212,168,67,0.08)", border: "rgba(212,168,67,0.15)" },
           {
             label: "نبض السوق العالمي",
-            value: marketPulse?.regime || "—",
-            sub: marketPulse?.breadth ? `A/D ${marketPulse.breadth.advancers}/${marketPulse.breadth.decliners}` : "جاري التحميل",
+            value: regimeAr,
+            sub: marketPulse?.breadth ? `صاعد/هابط ${marketPulse.breadth.advancers}/${marketPulse.breadth.decliners}` : "جاري التحميل",
             icon: BarChart3,
             color: marketPulse?.regime === "Risk-On" ? "#10b981" : marketPulse?.regime === "Risk-Off" ? "#ef4444" : "#3b82f6",
             accent: "rgba(59,130,246,0.08)",
@@ -502,7 +517,7 @@ export default function Dashboard() {
           <p className="text-xs mt-2 flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${broker?.active ? "bg-emerald-400 animate-pulse" : "bg-[#475569]"}`} />
             <span className={broker?.active ? "text-emerald-400" : "text-[#64748b]"}>
-              مصدر البيانات: {broker?.active === 'alpaca' ? `Alpaca ${broker?.alpacaPaper ? '(ورقي)' : '(حقيقي)'}` : broker?.active === 'ibkr' ? 'IBKR' : 'Yahoo Proxy'}
+              مصدر البيانات: {sourceLabelAr(broker)}
             </span>
           </p>
         </div>
