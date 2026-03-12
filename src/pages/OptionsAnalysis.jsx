@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { TrendingUp, Search, Loader2, Target, BarChart3, Activity, AlertCircle, ChevronDown, ChevronUp, X } from "lucide-react";
+import { getOptionsChain } from "@/components/api/marketDataClient";
 
 const POPULAR_STOCKS = [
   { symbol: "AAPL", name: "Apple" }, { symbol: "TSLA", name: "Tesla" }, { symbol: "NVDA", name: "NVIDIA" },
@@ -16,6 +17,15 @@ const OPTION_TYPES = [
 ];
 
 const EXPIRY_OPTIONS = ["أسبوع واحد", "أسبوعان", "شهر واحد", "3 أشهر", "6 أشهر", "سنة"];
+
+const formatExpiryLabel = (unixTs) => {
+  if (!unixTs) return "—";
+  return new Date(Number(unixTs) * 1000).toLocaleDateString("ar-SA", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
 
 function StatCard({ label, value, sub, color }) {
   return (
@@ -78,22 +88,49 @@ export default function OptionsAnalysis() {
     setInputVal(stock.symbol);
     setShowDropdown(false);
   };
-  const [expiry, setExpiry] = useState("شهر واحد");
+  const [expiry, setExpiry] = useState(null);
+  const [availableExpiries, setAvailableExpiries] = useState([]);
   const [strikeOffset, setStrikeOffset] = useState(0); // ATM=0, ITM=-1/+1, OTM=+1/-1
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
 
-  const analyze = async () => {
+  const analyze = async (overrides = {}) => {
     if (!inputVal.trim()) return;
     setLoading(true);
     setError("");
     setResult(null);
     const sym = inputVal.trim().toUpperCase();
     setSymbol(sym);
-    setError("تحليل الذكاء الاصطناعي غير متاح.");
-    setLoading(false);
+    const selectedType = overrides.type ?? optionType;
+    const selectedOffset = overrides.offset ?? strikeOffset;
+    const selectedExpiry = overrides.expiry ?? expiry;
+    try {
+      const data = await getOptionsChain({
+        symbol: sym,
+        type: selectedType,
+        offset: selectedOffset,
+        expiry: selectedExpiry,
+      });
+      setResult(data || null);
+      if (Array.isArray(data?.expiration_dates) && data.expiration_dates.length > 0) {
+        setAvailableExpiries(data.expiration_dates);
+      }
+      if (data?.expiration) {
+        setExpiry(data.expiration);
+      }
+    } catch (e) {
+      setError("تعذر تحميل بيانات الخيارات. تأكد من الرمز وحاول مرة أخرى.");
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    if (!inputVal.trim()) return;
+    analyze();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionType, strikeOffset]);
 
   const recColor = {
     "شراء قوي": "#10b981",
@@ -188,11 +225,24 @@ export default function OptionsAnalysis() {
           <div>
             <label className="text-xs text-[#64748b] block mb-2">تاريخ الانتهاء</label>
             <select
-              value={expiry}
-              onChange={e => setExpiry(e.target.value)}
+              value={expiry ?? ""}
+              onChange={e => {
+                const raw = e.target.value;
+                if (!raw) return;
+                const nextExpiry = Number(raw);
+                if (!Number.isFinite(nextExpiry) || nextExpiry <= 0) return;
+                setExpiry(nextExpiry);
+                analyze({ expiry: nextExpiry });
+              }}
               className="w-full bg-[#0f1623] border border-[#1e293b] rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#d4a843]/50"
             >
-              {EXPIRY_OPTIONS.map(o => <option key={o}>{o}</option>)}
+              {availableExpiries.length > 0 ? (
+                availableExpiries.map((ts) => (
+                  <option key={ts} value={ts}>{formatExpiryLabel(ts)}</option>
+                ))
+              ) : (
+                EXPIRY_OPTIONS.map(o => <option key={o} value="">{o}</option>)
+              )}
             </select>
           </div>
 
@@ -332,6 +382,7 @@ export default function OptionsAnalysis() {
             <div className="bg-[#151c2c] border border-[#d4a843]/20 rounded-2xl p-5">
               <h3 className="text-sm font-bold text-[#d4a843] mb-2">📋 الملخص التحليلي</h3>
               <p className="text-sm text-[#94a3b8] leading-relaxed">{result.summary}</p>
+              <p className="text-xs text-[#64748b] mt-2">مصدر البيانات: سلسلة الخيارات الأمريكية (Yahoo Finance)</p>
             </div>
           )}
         </div>

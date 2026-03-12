@@ -55,9 +55,24 @@ export const getNews = async (symbol, market) => {
 
 export const getTopMovers = async (market = 'saudi') => {
   try {
-    const data = await apiFetch(`/api/market/top_movers?market=${encodeURIComponent(market)}`);
+    const data = await apiFetch(`/api/market/top-movers?market=${encodeURIComponent(market)}`);
     return data;
   } catch { return null; }
+};
+
+export const getOptionsChain = async ({ symbol, type = 'call', offset = 0, expiry } = {}) => {
+  if (!symbol) throw new Error('symbol required');
+  const params = new URLSearchParams({
+    symbol: String(symbol).toUpperCase(),
+    type,
+    offset: String(offset),
+  });
+  if (expiry) params.set('expiry', String(expiry));
+  return apiFetch(`/api/market/options-chain?${params.toString()}`);
+};
+
+export const getMarketPulse = async () => {
+  return apiFetch('/api/market/market-pulse');
 };
 
 export const getForex = async (from = "USD", to = "SAR") => {

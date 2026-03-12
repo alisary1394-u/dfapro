@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getTopMovers, getForex, getCrypto, getBatchQuotes } from "@/components/api/marketDataClient";
+import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse } from "@/components/api/marketDataClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import MarketOverviewBar from "@/components/ui/MarketOverviewBar";
@@ -57,6 +57,7 @@ export default function Dashboard() {
   const [forex, setForex] = useState(null);
   const [crypto, setCrypto] = useState(null);
   const [liveStats, setLiveStats] = useState(null);
+  const [marketPulse, setMarketPulse] = useState(null);
 
   // Fetch live data based on selected market
   useEffect(() => {
@@ -64,6 +65,7 @@ export default function Dashboard() {
       getTopMovers(market).then(setLiveMovers).catch(() => {});
       getForex("USD", "SAR").then(setForex).catch(() => {});
       getCrypto("BTC", "USD").then(setCrypto).catch(() => {});
+      getMarketPulse().then(setMarketPulse).catch(() => {});
       getTopMovers(market).then(data => {
         if (data?.gainers && data?.losers) {
           const allStocks = [...(data.gainers || []), ...(data.losers || [])];
@@ -189,7 +191,15 @@ export default function Dashboard() {
           { label: "أسهم صاعدة", value: liveStats ? String(liveStats.up) : "—", sub: liveStats ? `من ${liveStats.total} سهم` : "جاري التحميل", icon: TrendingUp, color: "#10b981", accent: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.15)" },
           { label: "أسهم هابطة", value: liveStats ? String(liveStats.down) : "—", sub: liveStats ? `من ${liveStats.total} سهم` : "جاري التحميل", icon: TrendingDown, color: "#ef4444", accent: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.15)" },
           { label: "الأكثر ارتفاعاً", value: gainers?.[0]?.symbol || "—", sub: gainers?.[0]?.name || "", icon: Activity, color: "#d4a843", accent: "rgba(212,168,67,0.08)", border: "rgba(212,168,67,0.15)" },
-          { label: "الأكثر انخفاضاً", value: losers?.[0]?.symbol || "—", sub: losers?.[0]?.name || "", icon: BarChart3, color: "#3b82f6", accent: "rgba(59,130,246,0.08)", border: "rgba(59,130,246,0.15)" },
+          {
+            label: "نبض السوق العالمي",
+            value: marketPulse?.regime || "—",
+            sub: marketPulse?.breadth ? `A/D ${marketPulse.breadth.advancers}/${marketPulse.breadth.decliners}` : "جاري التحميل",
+            icon: BarChart3,
+            color: marketPulse?.regime === "Risk-On" ? "#10b981" : marketPulse?.regime === "Risk-Off" ? "#ef4444" : "#3b82f6",
+            accent: "rgba(59,130,246,0.08)",
+            border: "rgba(59,130,246,0.15)"
+          },
         ].map((stat) => (
           <div
             key={stat.label}

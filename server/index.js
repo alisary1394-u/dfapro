@@ -58,6 +58,7 @@ app.use((req, res, next) => {
 const YF_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const YF_SEARCH = 'https://query1.finance.yahoo.com/v1/finance/search';
 const YF_QUOTE = 'https://query2.finance.yahoo.com/v10/finance/quoteSummary';
+const YF_OPTIONS = 'https://query2.finance.yahoo.com/v7/finance/options';
 
 const toYahooSymbol = (symbol, market) => {
   if (market === 'saudi') {
@@ -107,6 +108,8 @@ const TTL = {
   news:        5 * 60 * 1000,
   forex:       60 * 1000,
   crypto:      30 * 1000,
+  options_chain: 20 * 1000,
+  market_pulse: 30 * 1000,
 };
 
 const cacheGet = (key) => {
@@ -389,6 +392,12 @@ app.get('/api/market/top-movers', async (req, res) => {
   }
 });
 
+// Backward compatibility for old client path
+app.get('/api/market/top_movers', async (req, res) => {
+  const market = req.query.market || 'saudi';
+  return res.redirect(307, `/api/market/top-movers?market=${encodeURIComponent(market)}`);
+});
+
 // GET /api/market/news?symbol=2222&market=saudi
 app.get('/api/market/news', async (req, res) => {
   try {
@@ -412,6 +421,205 @@ app.get('/api/market/news', async (req, res) => {
   } catch (err) {
     console.error('News error:', err.message);
     res.json({ news: [] });
+  }
+});
+
+// GET /api/market/options-chain?symbol=AAPL&type=call&offset=0[&expiry=unix]
+app.get('/api/market/options-chain', async (req, res) => {
+  try {
+    const symbol = String(req.query.symbol || '').trim().toUpperCase();
+    const type = String(req.query.type || 'call').toLowerCase() === 'put' ? 'put' : 'call';
+    const offset = Number(req.query.offset || 0);
+    const expiry = req.query.expiry ? Number(req.query.expiry) : null;
+
+    if (!symbol) return res.status(400).json({ error: 'symbol required' });
+
+    const expiryKey = expiry ? String(expiry) : 'auto';
+    const cacheKey = `options-chain:${symbol}:${type}:${offset}:${expiryKey}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const first = await yfFetch(`${YF_OPTIONS}/${encodeURIComponent(symbol)}`);
+    const firstResult = first?.optionChain?.result?.[0];
+    const expirations = firstResult?.expirationDates || [];
+    if (!firstResult || expirations.length === 0) {
+      return res.status(404).json({ error: 'No options data for symbol' });
+    }
+
+    let selectedExpiry = expiry && expirations.includes(expiry) ? expiry : expirations[0];
+    if (!selectedExpiry) selectedExpiry = expirations[0];
+
+    const chainData = await yfFetch(`${YF_OPTIONS}/${encodeURIComponent(symbol)}?date=${selectedExpiry}`);
+    const result = chainData?.optionChain?.result?.[0];
+    const quote = result?.quote;
+    const optionsBlock = result?.options?.[0] || {};
+    const optionRows = type === 'put' ? (optionsBlock.puts || []) : (optionsBlock.calls || []);
+    if (!quote || optionRows.length === 0) {
+      return res.status(404).json({ error: 'No options contracts returned' });
+    }
+
+    const underlying = Number(quote.regularMarketPrice || quote.postMarketPrice || 0);
+    const sortedByDistance = [...optionRows].sort((a, b) => {
+      const da = Math.abs(Number(a.strike || 0) - underlying);
+      const db = Math.abs(Number(b.strike || 0) - underlying);
+      return da - db;
+    });
+
+    const atmIndex = sortedByDistance.findIndex((c) => Number(c.strike || 0) > 0);
+    let pickIndex = Math.max(0, atmIndex);
+    if (offset === -1) pickIndex = Math.min(sortedByDistance.length - 1, atmIndex + (type === 'call' ? -1 : 1));
+    if (offset === 1) pickIndex = Math.min(sortedByDistance.length - 1, atmIndex + (type === 'call' ? 1 : -1));
+    if (offset === 2) pickIndex = Math.max(0, atmIndex);
+
+    const contract = sortedByDistance[pickIndex] || sortedByDistance[0];
+
+    const mark = Number(contract.lastPrice ?? ((Number(contract.bid || 0) + Number(contract.ask || 0)) / 2) || 0);
+    const strike = Number(contract.strike || 0);
+    const iv = Number(contract.impliedVolatility || 0) * 100;
+    const breakEven = type === 'call' ? strike + mark : strike - mark;
+
+    const dteMs = Number(selectedExpiry) * 1000 - Date.now();
+    const dte = Math.max(1, Math.round(dteMs / (24 * 60 * 60 * 1000)));
+
+    const sentimentScore = (() => {
+      const oi = Number(contract.openInterest || 0);
+      const vol = Number(contract.volume || 0);
+      const liq = Math.min(1, (oi + vol) / 5000);
+      const moneyness = Math.max(0, 1 - Math.abs(strike - underlying) / Math.max(underlying, 1));
+      const ivPenalty = iv > 70 ? -0.2 : iv < 20 ? 0.15 : 0;
+      const base = 0.45 + (liq * 0.3) + (moneyness * 0.2) + ivPenalty;
+      return Math.max(0, Math.min(1, base));
+    })();
+
+    const recommendation = sentimentScore >= 0.75
+      ? 'شراء قوي'
+      : sentimentScore >= 0.6
+        ? 'شراء'
+        : sentimentScore >= 0.45
+          ? 'محايد'
+          : sentimentScore >= 0.3
+            ? 'تجنب'
+            : 'بيع';
+
+    const scenarios = [
+      { scenario: 'ارتفاع قوي', move: 0.06, probability: '25%' },
+      { scenario: 'ارتفاع معتدل', move: 0.03, probability: '30%' },
+      { scenario: 'ثبات', move: 0.0, probability: '20%' },
+      { scenario: 'هبوط معتدل', move: -0.03, probability: '15%' },
+      { scenario: 'هبوط قوي', move: -0.06, probability: '10%' },
+    ].map((s) => {
+      const future = underlying * (1 + s.move);
+      const intrinsic = type === 'call' ? Math.max(0, future - strike) : Math.max(0, strike - future);
+      const pnl = +(intrinsic - mark).toFixed(2);
+      return {
+        scenario: s.scenario,
+        price_change: `${(s.move * 100).toFixed(0)}%`,
+        pnl: pnl > 0 ? `+$${pnl}` : pnl < 0 ? `-$${Math.abs(pnl)}` : '$0.00',
+        probability: s.probability,
+      };
+    });
+
+    const payload = {
+      symbol,
+      selected_type: type,
+      current_price: underlying,
+      strike_price: strike,
+      premium: mark,
+      breakeven: +breakEven.toFixed(2),
+      iv_percent: +iv.toFixed(2),
+      dte,
+      expiration: selectedExpiry,
+      expiration_dates: expirations,
+      open_interest: Number(contract.openInterest || 0),
+      volume: Number(contract.volume || 0),
+      bid: Number(contract.bid || 0),
+      ask: Number(contract.ask || 0),
+      in_the_money: Boolean(contract.inTheMoney),
+      recommendation,
+      recommendation_reason: `السيولة ${Number(contract.openInterest || 0) > 1000 ? 'مرتفعة' : 'متوسطة'} و IV عند ${iv.toFixed(1)}% مع DTE ${dte} يوم.`,
+      greeks: {
+        delta: type === 'call' ? Math.max(0.05, Math.min(0.95, 0.5 + (underlying - strike) / Math.max(underlying, 1))) : -Math.max(0.05, Math.min(0.95, 0.5 + (strike - underlying) / Math.max(underlying, 1))),
+        gamma: +(Math.max(0.01, 0.18 - Math.abs(strike - underlying) / Math.max(underlying, 1)).toFixed(4)),
+        theta: +(-Math.max(0.005, mark / Math.max(dte, 1) / 2).toFixed(4)),
+        vega: +(Math.max(0.02, iv / 100 / 6).toFixed(4)),
+        rho: +((type === 'call' ? 1 : -1) * Math.max(0.01, dte / 365 / 8)).toFixed(4),
+      },
+      profit_scenarios: scenarios,
+      max_profit: type === 'call' ? 'غير محدود' : `$${(strike - mark).toFixed(2)}`,
+      max_loss: `$${mark.toFixed(2)}`,
+      strengths: [
+        'بيانات مباشرة من سلسلة الخيارات الأمريكية.',
+        `سيولة العقد: حجم ${Number(contract.volume || 0)} و OI ${Number(contract.openInterest || 0)}.`,
+        `IV = ${iv.toFixed(1)}% مع تقييم توصية لحظي.`,
+      ],
+      risks: [
+        'حساسية عالية لتغيرات التقلب الضمني (IV).',
+        'تآكل زمني يومي (Theta) قبل تاريخ الانتهاء.',
+        'مخاطر فجوات سعرية وقت الأخبار والافتتاح.',
+      ],
+      summary: `تم تحليل ${symbol} (${type.toUpperCase()}) على انتهاء ${new Date(selectedExpiry * 1000).toLocaleDateString('en-CA')}. السعر الحالي ${underlying.toFixed(2)} وسعر الإضراب ${strike.toFixed(2)} والقسط ${mark.toFixed(2)}.`,
+    };
+
+    cacheSet(cacheKey, payload, TTL.options_chain);
+    return res.json(payload);
+  } catch (err) {
+    console.error('Options chain error:', err.message);
+    return res.status(502).json({ error: 'Failed to fetch options chain' });
+  }
+});
+
+// GET /api/market/market-pulse
+app.get('/api/market/market-pulse', async (_req, res) => {
+  try {
+    const cached = cacheGet('market-pulse');
+    if (cached) return res.json(cached);
+
+    const trackers = [
+      { key: 'tasi', name: 'تاسي', symbol: '^TASI.SR' },
+      { key: 'spx', name: 'S&P 500', symbol: '^GSPC' },
+      { key: 'ndx', name: 'Nasdaq 100', symbol: '^NDX' },
+      { key: 'vix', name: 'VIX', symbol: '^VIX' },
+      { key: 'rut', name: 'Russell 2000', symbol: '^RUT' },
+    ];
+
+    const results = await Promise.allSettled(
+      trackers.map((t) => yfFetch(`${YF_BASE}/${encodeURIComponent(t.symbol)}?interval=1d&range=2d`))
+    );
+
+    const items = trackers.map((t, i) => {
+      const r = results[i];
+      if (r.status !== 'fulfilled') return { key: t.key, name: t.name, value: 0, change_percent: 0 };
+      const meta = r.value.chart?.result?.[0]?.meta;
+      const price = Number(meta?.regularMarketPrice || 0);
+      const prev = Number(meta?.previousClose || meta?.chartPreviousClose || price || 1);
+      return {
+        key: t.key,
+        name: t.name,
+        value: +price.toFixed(2),
+        change_percent: +(((price - prev) / prev) * 100).toFixed(2),
+      };
+    });
+
+    const advancers = items.filter((x) => x.change_percent > 0).length;
+    const decliners = items.filter((x) => x.change_percent < 0).length;
+    const marketRegime = advancers >= 3 ? 'Risk-On' : decliners >= 3 ? 'Risk-Off' : 'Neutral';
+
+    const payload = {
+      timestamp: Date.now(),
+      regime: marketRegime,
+      breadth: {
+        advancers,
+        decliners,
+        ratio: decliners === 0 ? advancers : +(advancers / decliners).toFixed(2),
+      },
+      indicators: items,
+    };
+
+    cacheSet('market-pulse', payload, TTL.market_pulse);
+    return res.json(payload);
+  } catch (err) {
+    console.error('Market pulse error:', err.message);
+    return res.status(502).json({ error: 'Failed to fetch market pulse' });
   }
 });
 
