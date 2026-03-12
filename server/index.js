@@ -278,21 +278,52 @@ app.get('/api/market/indices', async (req, res) => {
 
     const symbols = ['^TASI.SR', '^GSPC', '^IXIC', '^DJI'];
     const names = ['تاسي', 'S&P 500', 'ناسداك', 'داو جونز'];
+    const markets = ['saudi', 'us', 'us', 'us'];
     
     const results = await Promise.allSettled(
       symbols.map(s => yfFetch(`${YF_BASE}/${encodeURIComponent(s)}?interval=1d&range=2d`))
     );
     
     const indices = results.map((r, i) => {
-      if (r.status !== 'fulfilled') return { name: names[i], value: 0, change: 0 };
+      if (r.status !== 'fulfilled') {
+        return {
+          name: names[i],
+          market: markets[i],
+          value: 0,
+          change: 0,
+          change_percent: 0,
+          market_state: 'UNKNOWN',
+          is_open: false,
+          source: 'Yahoo Finance',
+        };
+      }
       const meta = r.value.chart?.result?.[0]?.meta;
-      if (!meta) return { name: names[i], value: 0, change: 0 };
+      if (!meta) {
+        return {
+          name: names[i],
+          market: markets[i],
+          value: 0,
+          change: 0,
+          change_percent: 0,
+          market_state: 'UNKNOWN',
+          is_open: false,
+          source: 'Yahoo Finance',
+        };
+      }
       const price = meta.regularMarketPrice ?? 0;
       const prev = meta.previousClose ?? meta.chartPreviousClose ?? price;
+      const changePercent = prev !== 0 ? +(((price - prev) / prev) * 100).toFixed(2) : 0;
+      const marketState = String(meta.marketState || 'UNKNOWN').toUpperCase();
+      const isOpen = ['REGULAR', 'PRE', 'POST'].includes(marketState);
       return {
         name: names[i],
+        market: markets[i],
         value: +price.toFixed(2),
-        change: prev !== 0 ? +(((price - prev) / prev) * 100).toFixed(2) : 0,
+        change: changePercent,
+        change_percent: changePercent,
+        market_state: marketState,
+        is_open: isOpen,
+        source: 'Yahoo Finance',
       };
     });
     
