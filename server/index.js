@@ -473,7 +473,8 @@ app.get('/api/market/options-chain', async (req, res) => {
 
     const contract = sortedByDistance[pickIndex] || sortedByDistance[0];
 
-    const mark = Number(contract.lastPrice ?? ((Number(contract.bid || 0) + Number(contract.ask || 0)) / 2) || 0);
+    const rawMark = contract.lastPrice ?? ((Number(contract.bid || 0) + Number(contract.ask || 0)) / 2);
+    const mark = Number.isFinite(Number(rawMark)) ? Number(rawMark) : 0;
     const strike = Number(contract.strike || 0);
     const iv = Number(contract.impliedVolatility || 0) * 100;
     const breakEven = type === 'call' ? strike + mark : strike - mark;
