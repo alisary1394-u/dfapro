@@ -363,16 +363,52 @@ export async function getBars(symbol, interval = 'daily') {
 }
 
 // ── Asset Search ──
-export async function searchAssets(query) {
+export async function listAssets({ query = '', page = 1, limit = 200 } = {}) {
   const assets = await alpacaFetch(`${getBaseUrl()}/v2/assets?status=active`);
-  const q = query.toUpperCase();
-  return assets
-    .filter(a => a.tradable && (a.symbol.includes(q) || a.name.toUpperCase().includes(q)))
-    .slice(0, 20)
-    .map(a => ({
-      symbol: a.symbol,
-      name: a.name,
-      exchange: a.exchange,
-      class: a.class,
-    }));
+  const q = String(query || '').trim().toUpperCase();
+  const filtered = assets.filter((a) => {
+    if (!a.tradable) return false;
+    if (!q) return true;
+    return a.symbol.includes(q) || String(a.name || '').toUpperCase().includes(q);
+  });
+
+  const safeLimit = Math.max(1, Math.min(5000, Number(limit || 200)));
+  const safePage = Math.max(1, Number(page || 1));
+  const start = (safePage - 1) * safeLimit;
+  const rows = filtered.slice(start, start + safeLimit).map((a) => ({
+    symbol: a.symbol,
+    name: a.name,
+    exchange: a.exchange,
+    class: a.class,
+  }));
+
+  return {
+    page: safePage,
+    limit: safeLimit,
+    total: filtered.length,
+    hasMore: start + safeLimit < filtered.length,
+    assets: rows,
+  };
+}
+
+export async function searchAssets(query, limit = 500) {
+  const data = await listAssets({ query, page: 1, limit });
+  return data.assets;
+}
+
+// ── Batch snapshots for large universes ──
+export async function getSnapshots(symbols = []) {
+  const clean = [...new Set(symbols.map((s) => String(s || '').trim().toUpperCase()).filter(Boolean))];
+  if (clean.length === 0) return {};
+
+  const chunks = [];
+  for (let i = 0; i < clean.length; i += 200) chunks.push(clean.slice(i, i + 200));
+
+  const out = {};
+  for (const chunk of chunks) {
+    const params = new URLSearchParams({ symbols: chunk.join(',') }).toString();
+    const data = await alpacaFetch(`${DATA_URL}/v2/stocks/snapshots?${params}`);
+    Object.assign(out, data?.snapshots || {});
+  }
+  return out;
 }

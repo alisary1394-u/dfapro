@@ -8,12 +8,9 @@ import {
   getAlpacaSnapshot,
   getAlpacaBars,
   parseAlpacaQuote,
+  getAlpacaMovers,
+  getAlpacaUniverseStats,
 } from '@/components/api/alpacaClient';
-
-const US_MOVER_UNIVERSE = [
-  'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'META', 'GOOGL', 'AMD', 'NFLX', 'JPM',
-  'BAC', 'V', 'WMT', 'DIS', 'INTC', 'COIN', 'PLTR', 'SOFI', 'CRM', 'ORCL'
-];
 
 const apiFetch = async (path) => {
   const res = await fetch(path);
@@ -62,25 +59,8 @@ export const getTopMovers = async (market = 'saudi') => {
   const broker = getActiveBroker();
   if (broker === 'alpaca' && (market === 'us' || market === 'USA')) {
     try {
-      const snapshots = await Promise.allSettled(US_MOVER_UNIVERSE.map((symbol) => getAlpacaSnapshot(symbol)));
-      const rows = snapshots.map((s, idx) => {
-        if (s.status !== 'fulfilled') return null;
-        const parsed = parseAlpacaQuote(s.value);
-        if (!parsed || !parsed.price) return null;
-        return {
-          symbol: US_MOVER_UNIVERSE[idx],
-          name: US_MOVER_UNIVERSE[idx],
-          price: parsed.price,
-          change: parsed.change_percent || 0,
-          market: 'us',
-        };
-      }).filter(Boolean);
-
-      const sorted = [...rows].sort((a, b) => b.change - a.change);
-      return {
-        gainers: sorted.filter((s) => s.change > 0).slice(0, 10),
-        losers: sorted.filter((s) => s.change < 0).sort((a, b) => a.change - b.change).slice(0, 10),
-      };
+      // scanLimit=0 means full universe scan server-side (cached there)
+      return await getAlpacaMovers({ limit: 10, scanLimit: 0 });
     } catch {
       // fall through to backend proxy
     }
@@ -105,6 +85,18 @@ export const getOptionsChain = async ({ symbol, type = 'call', offset = 0, expir
 
 export const getMarketPulse = async () => {
   return apiFetch('/api/market/market-pulse');
+};
+
+export const getBrokerUniverseStats = async () => {
+  const broker = getActiveBroker();
+  if (broker === 'alpaca') {
+    try {
+      return await getAlpacaUniverseStats();
+    } catch {
+      return null;
+    }
+  }
+  return null;
 };
 
 export const getForex = async (from = "USD", to = "SAR") => {

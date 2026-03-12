@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse } from "@/components/api/marketDataClient";
+import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse, getBrokerUniverseStats } from "@/components/api/marketDataClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { useBroker } from "@/lib/BrokerContext";
@@ -11,7 +11,7 @@ import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import { useDashboardLayout } from "@/components/dashboard/useDashboardLayout";
 import {
   TrendingUp, TrendingDown, BarChart3, Activity, Flame, Brain, Sparkles, Target,
-  CalendarDays, Globe2, DollarSign, Bitcoin
+  CalendarDays, Globe2, DollarSign, Bitcoin, ShieldCheck, Waves, Radar
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -60,6 +60,7 @@ export default function Dashboard() {
   const [crypto, setCrypto] = useState(null);
   const [liveStats, setLiveStats] = useState(null);
   const [marketPulse, setMarketPulse] = useState(null);
+  const [universeStats, setUniverseStats] = useState(null);
 
   // Fetch live data based on selected market
   useEffect(() => {
@@ -76,6 +77,7 @@ export default function Dashboard() {
       getForex("USD", "SAR").then(setForex).catch(() => {});
       getCrypto("BTC", "USD").then(setCrypto).catch(() => {});
       getMarketPulse().then(setMarketPulse).catch(() => {});
+      getBrokerUniverseStats().then(setUniverseStats).catch(() => {});
     };
     fetchAll();
     const refreshMs = broker?.active ? 5000 : 12000;
@@ -84,12 +86,20 @@ export default function Dashboard() {
   }, [market, broker?.active]);
 
   const gainers = liveMovers?.gainers?.length
-    ? liveMovers.gainers.slice(0, 4)
+    ? liveMovers.gainers
     : fallbackGainers[market];
   const losers = liveMovers?.losers?.length
-    ? liveMovers.losers.slice(0, 4)
+    ? liveMovers.losers
     : fallbackLosers[market];
   const isLive = !!liveMovers?.gainers?.length;
+
+  const vixIndicator = marketPulse?.indicators?.find((i) => i.key === 'vix');
+  const liquidityScore = (() => {
+    if (!liveMovers?.gainers || !liveMovers?.losers) return null;
+    const depth = (liveMovers.gainers.length || 0) + (liveMovers.losers.length || 0);
+    const total = universeStats?.total || depth || 1;
+    return Math.min(100, Math.max(1, Math.round((depth / total) * 100 * 15)));
+  })();
 
   // Compute sentiment from real movers data
   const marketSentimentData = (() => {
@@ -151,6 +161,68 @@ export default function Dashboard() {
 
   // Render individual widgets
   const widgetMap = {
+    market_cockpit: (
+      <div key="market_cockpit" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <Radar className="w-5 h-5 text-[#d4a843]" /> Market Cockpit
+          </h2>
+          <span className="text-[11px] px-2 py-1 rounded-lg bg-[#1a2540] text-[#94a3b8]">
+            {broker?.active ? 'Broker-linked' : 'Proxy-linked'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          {[
+            {
+              label: 'Regime',
+              value: marketPulse?.regime || 'Neutral',
+              sub: 'Risk State',
+              icon: ShieldCheck,
+              color: marketPulse?.regime === 'Risk-On' ? '#10b981' : marketPulse?.regime === 'Risk-Off' ? '#ef4444' : '#d4a843',
+            },
+            {
+              label: 'Breadth',
+              value: marketPulse?.breadth ? `${marketPulse.breadth.advancers}/${marketPulse.breadth.decliners}` : '—',
+              sub: 'A/D',
+              icon: Waves,
+              color: '#3b82f6',
+            },
+            {
+              label: 'VIX',
+              value: vixIndicator?.value != null ? vixIndicator.value.toFixed(2) : '—',
+              sub: vixIndicator?.change_percent != null ? `${vixIndicator.change_percent}%` : 'Volatility',
+              icon: Activity,
+              color: (vixIndicator?.value || 0) > 22 ? '#ef4444' : '#10b981',
+            },
+            {
+              label: 'Liquidity',
+              value: liquidityScore != null ? `${liquidityScore}/100` : '—',
+              sub: 'Scan Depth',
+              icon: BarChart3,
+              color: '#06b6d4',
+            },
+            {
+              label: 'Universe',
+              value: universeStats?.total ? universeStats.total.toLocaleString() : '—',
+              sub: broker?.active === 'alpaca' ? 'Broker Companies' : 'Provider Universe',
+              icon: Globe2,
+              color: '#f59e0b',
+            },
+          ].map((c) => (
+            <div key={c.label} className="rounded-xl border border-[#1a2540] bg-[#0b111d] p-3">
+              <div className="flex items-center justify-between mb-2">
+                <c.icon className="w-4 h-4" style={{ color: c.color }} />
+                <span className="text-[10px] text-[#64748b]">{c.label}</span>
+              </div>
+              <p className="text-lg font-black text-white">{c.value}</p>
+              <p className="text-[11px]" style={{ color: c.color }}>{c.sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+
     market_overview: (
       <div key="market_overview" className="bg-[#0d1420] border border-[#1a2540] rounded-2xl p-4">
         <MarketOverviewBar />
@@ -315,7 +387,7 @@ export default function Dashboard() {
           {isLive && <span className="text-xs font-bold px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center gap-1 mr-auto"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />مباشر</span>}
         </h2>
         <div className="grid grid-cols-2 gap-3">
-          {gainers.map((stock) => <StockCard key={stock.symbol} {...stock} onClick={() => handleStockClick(stock)} />)}
+          {(gainers || []).slice(0, 8).map((stock) => <StockCard key={stock.symbol} {...stock} onClick={() => handleStockClick(stock)} />)}
         </div>
       </div>
     ),
@@ -327,7 +399,7 @@ export default function Dashboard() {
           {isLive && <span className="text-xs font-bold px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center gap-1 mr-auto"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />مباشر</span>}
         </h2>
         <div className="grid grid-cols-2 gap-3">
-          {losers.map((stock) => <StockCard key={stock.symbol} {...stock} onClick={() => handleStockClick(stock)} />)}
+          {(losers || []).slice(0, 8).map((stock) => <StockCard key={stock.symbol} {...stock} onClick={() => handleStockClick(stock)} />)}
         </div>
       </div>
     ),

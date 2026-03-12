@@ -1056,12 +1056,104 @@ app.get('/api/alpaca/bars/:symbol', async (req, res) => {
 // Alpaca Asset Search
 app.get('/api/alpaca/search', async (req, res) => {
   try {
-    const { q = '' } = req.query;
-    if (!q) return res.status(400).json({ error: 'Query required' });
-    const results = await alpacaApi.searchAssets(q);
+    const { q = '', limit = 500 } = req.query;
+    const results = await alpacaApi.searchAssets(q, Number(limit || 500));
     res.json(results);
   } catch (err) {
     res.status(502).json({ error: 'Search failed', details: err.message });
+  }
+});
+
+// Alpaca full assets universe (paginated)
+app.get('/api/alpaca/assets', async (req, res) => {
+  try {
+    const { q = '', page = 1, limit = 500 } = req.query;
+    const data = await alpacaApi.listAssets({
+      query: String(q || ''),
+      page: Number(page || 1),
+      limit: Number(limit || 500),
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Assets fetch failed', details: err.message });
+  }
+});
+
+// Alpaca universe stats for dashboard coverage/cockpit
+app.get('/api/alpaca/universe-stats', async (_req, res) => {
+  try {
+    const cacheKey = 'alpaca:universe-stats';
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const data = await alpacaApi.listAssets({ page: 1, limit: 5000 });
+    const byExchange = (data.assets || []).reduce((acc, row) => {
+      const key = row.exchange || 'OTHER';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const payload = {
+      total: data.total || 0,
+      exchanges: byExchange,
+      fetched: data.assets?.length || 0,
+      source: 'alpaca',
+      ts: Date.now(),
+    };
+    cacheSet(cacheKey, payload, 60 * 1000);
+    res.json(payload);
+  } catch (err) {
+    res.status(502).json({ error: 'Universe stats failed', details: err.message });
+  }
+});
+
+// Alpaca broad movers scan (not limited to fixed 20 symbols)
+app.get('/api/alpaca/movers', async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 20)));
+    const scanLimitRaw = Number(req.query.scanLimit || 1000);
+    const scanLimit = scanLimitRaw === 0 ? 100000 : Math.max(100, Math.min(100000, scanLimitRaw));
+    const cacheKey = `alpaca:movers:${limit}:${scanLimit}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const universe = await alpacaApi.listAssets({ page: 1, limit: scanLimit });
+    const symbols = (universe.assets || []).map((a) => a.symbol).filter(Boolean);
+    if (symbols.length === 0) return res.json({ gainers: [], losers: [], scanned: 0, total: 0, source: 'alpaca' });
+
+    const snapshots = await alpacaApi.getSnapshots(symbols);
+    const rows = symbols.map((sym) => {
+      const snap = snapshots[sym];
+      if (!snap) return null;
+      const trade = snap.latestTrade || {};
+      const daily = snap.dailyBar || {};
+      const prev = snap.prevDailyBar || {};
+      const price = Number(trade.p || daily.c || 0);
+      const prevClose = Number(prev.c || 0);
+      if (!price || !prevClose) return null;
+      const change = +(((price - prevClose) / prevClose) * 100).toFixed(2);
+      return {
+        symbol: sym,
+        name: sym,
+        price: +price.toFixed(2),
+        change,
+        market: 'us',
+      };
+    }).filter(Boolean);
+
+    const sorted = rows.sort((a, b) => b.change - a.change);
+    const payload = {
+      gainers: sorted.filter((s) => s.change > 0).slice(0, limit),
+      losers: sorted.filter((s) => s.change < 0).sort((a, b) => a.change - b.change).slice(0, limit),
+      scanned: rows.length,
+      total: universe.total || rows.length,
+      source: 'alpaca',
+    };
+
+    cacheSet(cacheKey, payload, 30 * 1000);
+    res.json(payload);
+  } catch (err) {
+    res.status(502).json({ error: 'Movers scan failed', details: err.message });
   }
 });
 

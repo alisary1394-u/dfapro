@@ -96,6 +96,23 @@ export const searchAlpacaAsset = async (query) => {
   return alpacaFetch(`/search?q=${encodeURIComponent(query)}`);
 };
 
+/** List full tradable universe (paginated) */
+export const getAlpacaAssets = async ({ q = '', page = 1, limit = 500 } = {}) => {
+  const params = new URLSearchParams({ q, page: String(page), limit: String(limit) });
+  return alpacaFetch(`/assets?${params.toString()}`);
+};
+
+/** Broad movers scan across broker universe */
+export const getAlpacaMovers = async ({ limit = 20, scanLimit = 1000 } = {}) => {
+  const params = new URLSearchParams({ limit: String(limit), scanLimit: String(scanLimit) });
+  return alpacaFetch(`/movers?${params.toString()}`);
+};
+
+/** Universe stats for cockpit */
+export const getAlpacaUniverseStats = async () => {
+  return alpacaFetch('/universe-stats');
+};
+
 // ─── Streaming (SSE → server WebSocket → Alpaca) ─────────────
 
 /**

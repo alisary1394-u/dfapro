@@ -2,16 +2,17 @@ import { useState, useEffect } from "react";
 import { authClient } from "@/api/authClient";
 
 export const ALL_WIDGETS = [
-  { id: "market_overview",   label: "نظرة عامة على السوق",  icon: "📊", defaultEnabled: true,  defaultOrder: 0 },
-  { id: "live_rates",        label: "أسعار حية",             icon: "💱", defaultEnabled: true,  defaultOrder: 1 },
-  { id: "quick_stats",       label: "إحصائيات سريعة",        icon: "⚡", defaultEnabled: true,  defaultOrder: 2 },
-  { id: "ai_insights",       label: "رؤى الذكاء الاصطناعي", icon: "🧠", defaultEnabled: true,  defaultOrder: 3 },
-  { id: "volume_chart",      label: "حجم التداول الشهري",    icon: "📈", defaultEnabled: true,  defaultOrder: 4 },
-  { id: "sentiment",         label: "مشاعر السوق",           icon: "🎯", defaultEnabled: true,  defaultOrder: 5 },
-  { id: "top_gainers",       label: "الأكثر ارتفاعاً",       icon: "🔥", defaultEnabled: true,  defaultOrder: 6 },
-  { id: "top_losers",        label: "الأكثر انخفاضاً",       icon: "📉", defaultEnabled: true,  defaultOrder: 7 },
-  { id: "next_session",      label: "توقعات الجلسة القادمة", icon: "🔮", defaultEnabled: true,  defaultOrder: 8 },
-  { id: "sector_performance",label: "أداء القطاعات",          icon: "🏭", defaultEnabled: true,  defaultOrder: 9 },
+  { id: "market_cockpit",    label: "غرفة قيادة السوق",      icon: "🛰️", defaultEnabled: true,  defaultOrder: 0 },
+  { id: "market_overview",   label: "نظرة عامة على السوق",  icon: "📊", defaultEnabled: true,  defaultOrder: 1 },
+  { id: "live_rates",        label: "أسعار حية",             icon: "💱", defaultEnabled: true,  defaultOrder: 2 },
+  { id: "quick_stats",       label: "إحصائيات سريعة",        icon: "⚡", defaultEnabled: true,  defaultOrder: 3 },
+  { id: "ai_insights",       label: "رؤى الذكاء الاصطناعي", icon: "🧠", defaultEnabled: true,  defaultOrder: 4 },
+  { id: "volume_chart",      label: "حجم التداول الشهري",    icon: "📈", defaultEnabled: true,  defaultOrder: 5 },
+  { id: "sentiment",         label: "مشاعر السوق",           icon: "🎯", defaultEnabled: true,  defaultOrder: 6 },
+  { id: "top_gainers",       label: "الأكثر ارتفاعاً",       icon: "🔥", defaultEnabled: true,  defaultOrder: 7 },
+  { id: "top_losers",        label: "الأكثر انخفاضاً",       icon: "📉", defaultEnabled: true,  defaultOrder: 8 },
+  { id: "next_session",      label: "توقعات الجلسة القادمة", icon: "🔮", defaultEnabled: true,  defaultOrder: 9 },
+  { id: "sector_performance",label: "أداء القطاعات",          icon: "🏭", defaultEnabled: true,  defaultOrder: 10 },
 ];
 
 const DEFAULT_LAYOUT = ALL_WIDGETS.map(w => ({
