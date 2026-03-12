@@ -11,11 +11,76 @@ import {
   getAlpacaMovers,
   getAlpacaUniverseStats,
 } from '@/components/api/alpacaClient';
+import {
+  searchContract,
+  getMarketSnapshot,
+} from '@/components/api/ibkrClient';
 
 const apiFetch = async (path) => {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json();
+};
+
+const US_INDEX_ETF_MAP = {
+  'S&P 500': 'SPY',
+  'ناسداك': 'QQQ',
+  'داو جونز': 'DIA',
+};
+
+const ibkrConidCache = new Map();
+
+const mergeUsIndicesFromBroker = async (indices, broker) => {
+  const merged = [...indices];
+  const usRows = merged.filter((r) => r?.market === 'us' && US_INDEX_ETF_MAP[r.name]);
+  if (usRows.length === 0) return merged;
+
+  if (broker === 'alpaca') {
+    await Promise.all(usRows.map(async (row) => {
+      try {
+        const etf = US_INDEX_ETF_MAP[row.name];
+        const snap = await getAlpacaSnapshot(etf);
+        const q = parseAlpacaQuote(snap);
+        if (!q || !q.price) return;
+        row.value = q.price;
+        row.change_percent = q.change_percent ?? row.change_percent;
+        row.change = q.change_percent ?? row.change;
+        row.market_state = 'REGULAR';
+        row.is_open = true;
+        row.source = `Alpaca (${etf})`;
+      } catch {
+        // keep proxy row from backend
+      }
+    }));
+    return merged;
+  }
+
+  if (broker === 'ibkr') {
+    await Promise.all(usRows.map(async (row) => {
+      try {
+        const etf = US_INDEX_ETF_MAP[row.name];
+        let conid = ibkrConidCache.get(etf);
+        if (!conid) {
+          const results = await searchContract(etf);
+          conid = results?.find((x) => x?.conid)?.conid;
+          if (!conid) return;
+          ibkrConidCache.set(etf, conid);
+        }
+        const snap = await getMarketSnapshot(conid, 'SMART', 'USD', 'STK');
+        if (!snap?.price) return;
+        row.value = snap.price;
+        row.change_percent = snap.change_percent ?? row.change_percent;
+        row.change = snap.change_percent ?? row.change;
+        row.market_state = 'REGULAR';
+        row.is_open = true;
+        row.source = `IBKR (${etf})`;
+      } catch {
+        // keep proxy row from backend
+      }
+    }));
+  }
+
+  return merged;
 };
 
 export const getQuote = async (symbol, market) => {
@@ -112,7 +177,17 @@ export const getCrypto = async (coin = "BTC", currency = "USD") => {
 
 export const getIndices = async () => {
   const data = await apiFetch('/api/market/indices');
-  return data?.indices || null;
+  const base = data?.indices || null;
+  if (!base) return null;
+
+  const broker = getActiveBroker();
+  if (!broker) return base;
+
+  try {
+    return await mergeUsIndicesFromBroker(base, broker);
+  } catch {
+    return base;
+  }
 };
 
 export const getBatchQuotes = async (symbols, market) => {
