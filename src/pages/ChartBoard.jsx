@@ -1443,14 +1443,31 @@ export default function ChartBoard() {
     if (!selectedStock) return;
     fetchCandles();
     const useRealtime = ibkrState.useIbkr || alpacaState.useAlpaca;
-    // Live brokers refresh every 60s; Yahoo refreshes every 5 minutes (large history, no need to hammer)
-    const iv = setInterval(fetchCandles, useRealtime ? 60000 : 300000);
+    const isIntra = isIntradayInterval(selectedTf?.interval);
+    // Live brokers: 30s intraday / 60s daily. Yahoo: 30s intraday / 5min daily
+    const refreshMs = useRealtime
+      ? (isIntra ? 30000 : 60000)
+      : (isIntra ? 30000 : 300000);
+    const iv = setInterval(fetchCandles, refreshMs);
     return () => clearInterval(iv);
   }, [selectedStock, market, timeframe, selectedRange, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
 
   // ── Live tick → update last candle bar directly (sub-second) ──
+  const liveBarRef = useRef({ time: 0, open: 0, high: 0, low: 0, close: 0 });
   useEffect(() => {
     if (!selectedStock || !alpacaState.connected || !alpacaState.useAlpaca) return;
+    // Reset live bar tracking on interval/stock change
+    liveBarRef.current = { time: 0, open: 0, high: 0, low: 0, close: 0 };
+
+    // Determine bucket size in seconds for time alignment
+    const bucketMap = {
+      '1sec': 1, '5sec': 5, '10sec': 10, '15sec': 15, '30sec': 30, '45sec': 45,
+      '1min': 60, '2min': 120, '3min': 180, '5min': 300, '10min': 600,
+      '15min': 900, '30min': 1800, '45min': 2700, '60min': 3600,
+      '2hour': 7200, '3hour': 10800, '4hour': 14400,
+      'daily': 86400, 'weekly': 604800, 'monthly': 2592000,
+    };
+    const bucket = bucketMap[selectedTf?.interval] || 60;
 
     const sub = subscribeAlpacaQuotes(selectedStock.symbol, (tick) => {
       if (!tick.price) return;
@@ -1462,21 +1479,38 @@ export default function ChartBoard() {
       // 2. Push directly to chart series — no React re-render needed
       const series = mainSeriesRef.current;
       if (!series) return;
-      const isIntraday = isIntradayInterval(selectedTf?.interval);
-      const now = isIntraday
-        ? Math.floor(Date.now() / 1000)
+      const isIntra = isIntradayInterval(selectedTf?.interval);
+      const nowUnix = Math.floor(Date.now() / 1000);
+      const candleTime = isIntra
+        ? Math.floor(nowUnix / bucket) * bucket   // aligned to bucket
         : new Date().toISOString().substring(0, 10);
+
+      const lb = liveBarRef.current;
+      const price = tick.price;
 
       try {
         if (chartType === 'line' || chartType === 'area') {
-          series.update({ time: now, value: tick.price });
+          series.update({ time: candleTime, value: price });
         } else {
+          // Same candle bucket → update OHLC
+          if (lb.time === candleTime) {
+            lb.high = Math.max(lb.high, price);
+            lb.low = Math.min(lb.low, price);
+            lb.close = price;
+          } else {
+            // New candle bucket
+            lb.time = candleTime;
+            lb.open = price;
+            lb.high = price;
+            lb.low = price;
+            lb.close = price;
+          }
           series.update({
-            time:  now,
-            open:  tick.open  || tick.price,
-            high:  tick.high  || tick.price,
-            low:   tick.low   || tick.price,
-            close: tick.price,
+            time:  candleTime,
+            open:  lb.open,
+            high:  lb.high,
+            low:   lb.low,
+            close: lb.close,
           });
         }
       } catch { /* ignore time ordering errors */ }
