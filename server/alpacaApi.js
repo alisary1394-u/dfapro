@@ -362,7 +362,7 @@ function rangeToStartDate(range) {
     case '5y': now.setFullYear(now.getFullYear() - 5); break;
     case '10y': now.setFullYear(now.getFullYear() - 10); break;
     case 'ytd': now.setMonth(0); now.setDate(1); break;
-    case 'max': now.setFullYear(now.getFullYear() - 20); break;
+    case 'max': now.setFullYear(now.getFullYear() - 50); break;
     default: return null;
   }
   return now.toISOString();
