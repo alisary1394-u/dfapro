@@ -2068,8 +2068,8 @@ export default function ChartBoard() {
       {/* ── CENTER ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* ══════ TOP TOOLBAR - ROW 1: Symbol + Timeframes + Range ══════ */}
-        <div className="flex items-center gap-1 px-2 py-[4px] border-b border-[#2a2e39] bg-[#131722] shrink-0 overflow-x-auto">
+        {/* ══════ ROW 1: Symbol + Intervals + Ranges ══════ */}
+        <div className="flex items-center gap-1 px-2 py-[3px] border-b border-[#2a2e39] bg-[#131722] shrink-0 overflow-x-auto">
 
           {/* Symbol */}
           <div className="flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded hover:bg-[#1e222d] cursor-pointer transition-colors shrink-0">
@@ -2094,13 +2094,12 @@ export default function ChartBoard() {
 
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
-          {/* Range (time period) — fixed, always all options */}
+          {/* Range (time period) */}
           <div className="flex items-center gap-0 shrink-0">
             {RANGES.map(r => (
               <button key={r.value} onClick={() => {
                 if (selectedRange === r.value) { setSelectedRange(null); return; }
                 setSelectedRange(r.value);
-                // Auto-adjust interval if current one can't display this range
                 if (!isIntervalCompatible(selectedTf?.interval, r.value)) {
                   const minInterval = bestIntervalForRange(r.value);
                   if (minInterval) {
@@ -2117,7 +2116,24 @@ export default function ChartBoard() {
             ))}
           </div>
 
-          <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
+          <div className="flex-1" />
+
+          {/* Price + Quote (right side of row 1) */}
+          {quote && (
+            <div className="flex items-center gap-1.5 text-[11px] shrink-0">
+              <span className="font-bold text-[#d1d4dc]">{quote.price?.toFixed(2)}</span>
+              <span className={`font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
+                {isUp ? "+" : ""}{quote.change?.toFixed(2)}
+              </span>
+              <span className={`font-bold px-1 py-0.5 rounded text-[10px] ${isUp ? "text-[#26a69a] bg-[#26a69a]/10" : "text-[#ef5350] bg-[#ef5350]/10"}`}>
+                {isUp ? "+" : ""}{(change || 0).toFixed(2)}%
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* ══════ ROW 2: Chart Type + Indicators + Broker + Actions ══════ */}
+        <div className="flex items-center gap-1 px-2 py-[3px] border-b border-[#2a2e39] bg-[#131722] shrink-0">
 
           {/* Chart type */}
           <div className="relative shrink-0">
@@ -2161,21 +2177,6 @@ export default function ChartBoard() {
             </>}
           </div>
 
-          <div className="flex-1" />
-
-          {/* Price + Quote */}
-          {quote && (
-            <div className="flex items-center gap-1.5 text-[11px] shrink-0">
-              <span className="font-bold text-[#d1d4dc]">{quote.price?.toFixed(2)}</span>
-              <span className={`font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
-                {isUp ? "+" : ""}{quote.change?.toFixed(2)}
-              </span>
-              <span className={`font-bold px-1 py-0.5 rounded text-[10px] ${isUp ? "text-[#26a69a] bg-[#26a69a]/10" : "text-[#ef5350] bg-[#ef5350]/10"}`}>
-                {isUp ? "+" : ""}{(change || 0).toFixed(2)}%
-              </span>
-            </div>
-          )}
-
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
           {/* AI */}
@@ -2187,29 +2188,33 @@ export default function ChartBoard() {
             AI
           </button>
 
+          <div className="flex-1" />
+
           {/* IBKR Connection */}
           <button onClick={() => { setShowIbkr(!showIbkr); setShowAlpaca(false); }}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
               ibkrState.connected
                 ? (showIbkr ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
                 : (showIbkr ? "bg-[#ff9800]/20 text-[#ff9800]" : "text-[#787b86] hover:text-[#ff9800]")
             }`}>
             {ibkrState.connected ? <Wifi className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
-            IBKR
+            <span>IBKR</span>
             {ibkrState.useIbkr && <span className="w-1.5 h-1.5 rounded-full bg-[#26a69a] animate-pulse" />}
           </button>
 
           {/* Alpaca Connection */}
           <button onClick={() => { setShowAlpaca(!showAlpaca); setShowIbkr(false); }}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
               alpacaState.connected
                 ? (showAlpaca ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
                 : (showAlpaca ? "bg-[#ffeb3b]/20 text-[#ffeb3b]" : "text-[#787b86] hover:text-[#ffeb3b]")
             }`}>
             {alpacaState.connected ? <Wifi className="w-3.5 h-3.5" /> : <Key className="w-3.5 h-3.5" />}
-            Alpaca
+            <span>Alpaca</span>
             {alpacaState.useAlpaca && <span className="w-1.5 h-1.5 rounded-full bg-[#ffeb3b] animate-pulse" />}
           </button>
+
+          <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
           {/* Screenshot */}
           <button onClick={takeScreenshot} title="لقطة شاشة (Ctrl+S)"
