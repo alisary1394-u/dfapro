@@ -1409,28 +1409,73 @@ export default function ChartBoard() {
         if (sseSub) sseSub.close();
       };
     } else if (alpacaState.connected && alpacaState.useAlpaca) {
-      // Alpaca real-time quote via SSE polling
+      // Alpaca real-time quote via snapshot polling (reliable, works with IEX free feed)
+      let cancelled = false;
       let sseSub = null;
 
-      const setupAlpaca = async () => {
-        // Initial snapshot
+      const pollSnapshot = async () => {
+        if (cancelled) return;
         try {
           const snap = await getAlpacaSnapshot(selectedStock.symbol);
-          if (snap) setQuote(parseAlpacaQuote(snap));
-        } catch (err) {
-          console.error('[Alpaca] Snapshot error:', err);
-        }
+          if (snap && !cancelled) {
+            const q = parseAlpacaQuote(snap);
+            if (q) setQuote(q);
 
-        // SSE streaming
-        sseSub = subscribeAlpacaQuotes(selectedStock.symbol, (tick) => {
-          const q = parseAlpacaTick(tick);
-          if (q) setQuote(q);
-        });
+            // Also update the chart's last candle directly from snapshot
+            const series = mainSeriesRef.current;
+            const price = q.price;
+            if (series && price) {
+              const tfInterval = selectedTf?.interval;
+              const isIntra = isIntradayInterval(tfInterval);
+              const bMap = {
+                '1sec': 1, '5sec': 5, '10sec': 10, '15sec': 15, '30sec': 30, '45sec': 45,
+                '1min': 60, '2min': 120, '3min': 180, '5min': 300, '10min': 600,
+                '15min': 900, '30min': 1800, '45min': 2700, '60min': 3600,
+                '2hour': 7200, '3hour': 10800, '4hour': 14400,
+                'daily': 86400, 'weekly': 604800, 'monthly': 2592000,
+              };
+              const bucket = bMap[tfInterval] || 60;
+              const nowUnix = Math.floor(Date.now() / 1000);
+              const candleTime = isIntra
+                ? Math.floor(nowUnix / bucket) * bucket
+                : new Date().toISOString().substring(0, 10);
+
+              const lb = liveBarRef.current;
+              try {
+                if (chartTypeRef.current === 'line' || chartTypeRef.current === 'area') {
+                  series.update({ time: candleTime, value: price });
+                } else {
+                  if (lb.time === candleTime) {
+                    lb.high = Math.max(lb.high, price);
+                    lb.low = Math.min(lb.low, price);
+                    lb.close = price;
+                  } else {
+                    lb.time = candleTime;
+                    lb.open = price;
+                    lb.high = price;
+                    lb.low = price;
+                    lb.close = price;
+                  }
+                  series.update({ time: candleTime, open: lb.open, high: lb.high, low: lb.low, close: lb.close });
+                }
+              } catch { /* time ordering */ }
+            }
+          }
+        } catch {}
       };
 
-      setupAlpaca();
+      pollSnapshot();
+      const iv = setInterval(pollSnapshot, 5000); // Poll every 5 seconds
+
+      // Also keep SSE as supplementary (for sub-second updates when available)
+      sseSub = subscribeAlpacaQuotes(selectedStock.symbol, (tick) => {
+        const q = parseAlpacaTick(tick);
+        if (q) setQuote(q);
+      });
 
       return () => {
+        cancelled = true;
+        clearInterval(iv);
         if (sseSub) sseSub.close();
       };
     } else {
@@ -1440,7 +1485,7 @@ export default function ChartBoard() {
       const iv = setInterval(fetchQ, 5000);
       return () => clearInterval(iv);
     }
-  }, [selectedStock, market, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
+  }, [selectedStock, market, timeframe, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
 
   // ── Fetch Candles (IBKR / Alpaca / Yahoo) ──
   useEffect(() => {
@@ -1452,81 +1497,14 @@ export default function ChartBoard() {
     const isIntra = isIntradayInterval(selectedTf?.interval);
     // Live brokers: 30s intraday / 60s daily. Yahoo: 30s intraday / 5min daily
     const refreshMs = useRealtime
-      ? (isIntra ? 30000 : 60000)
+      ? (isIntra ? 10000 : 30000)
       : (isIntra ? 30000 : 300000);
     const iv = setInterval(fetchCandles, refreshMs);
     return () => clearInterval(iv);
   }, [selectedStock, market, timeframe, selectedRange, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
 
-  // ── Live tick → update last candle bar directly (sub-second) ──
+  // ── Live candle tracking ref ──
   const liveBarRef = useRef({ time: 0, open: 0, high: 0, low: 0, close: 0 });
-  useEffect(() => {
-    if (!selectedStock || !alpacaState.connected || !alpacaState.useAlpaca) return;
-    // Reset live bar tracking on interval/stock change
-    liveBarRef.current = { time: 0, open: 0, high: 0, low: 0, close: 0 };
-
-    // Determine bucket size in seconds for time alignment
-    const bucketMap = {
-      '1sec': 1, '5sec': 5, '10sec': 10, '15sec': 15, '30sec': 30, '45sec': 45,
-      '1min': 60, '2min': 120, '3min': 180, '5min': 300, '10min': 600,
-      '15min': 900, '30min': 1800, '45min': 2700, '60min': 3600,
-      '2hour': 7200, '3hour': 10800, '4hour': 14400,
-      'daily': 86400, 'weekly': 604800, 'monthly': 2592000,
-    };
-    const bucket = bucketMap[selectedTf?.interval] || 60;
-
-    const sub = subscribeAlpacaQuotes(selectedStock.symbol, (tick) => {
-      if (!tick.price) return;
-
-      // 1. Update quote display
-      const q = parseAlpacaTick(tick);
-      if (q) setQuote(q);
-
-      // 2. Push directly to chart series — no React re-render needed
-      const series = mainSeriesRef.current;
-      if (!series) return;
-      const tfInterval = selectedTf?.interval;
-      const isIntra = isIntradayInterval(tfInterval);
-      const nowUnix = Math.floor(Date.now() / 1000);
-      const candleTime = isIntra
-        ? Math.floor(nowUnix / bucket) * bucket   // aligned to bucket
-        : new Date().toISOString().substring(0, 10);
-
-      const lb = liveBarRef.current;
-      const price = tick.price;
-
-      try {
-        if (chartTypeRef.current === 'line' || chartTypeRef.current === 'area') {
-          series.update({ time: candleTime, value: price });
-        } else {
-          // Same candle bucket → update OHLC
-          if (lb.time === candleTime) {
-            lb.high = Math.max(lb.high, price);
-            lb.low = Math.min(lb.low, price);
-            lb.close = price;
-          } else {
-            // New candle bucket
-            lb.time = candleTime;
-            lb.open = price;
-            lb.high = price;
-            lb.low = price;
-            lb.close = price;
-          }
-          series.update({
-            time:  candleTime,
-            open:  lb.open,
-            high:  lb.high,
-            low:   lb.low,
-            close: lb.close,
-          });
-        }
-      } catch (e) {
-        // Time ordering errors are expected during chart rebuilds
-      }
-    });
-
-    return () => sub.close();
-  }, [selectedStock, alpacaState.connected, alpacaState.useAlpaca, selectedTf]);
 
   // Smart update: if chart is already built, update series in-place (no flicker).
   // Falls back to full rebuild via setCandles() on first load or error.

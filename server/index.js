@@ -1600,6 +1600,30 @@ app.get('/api/alpaca/bars/:symbol', async (req, res) => {
   try {
     const { interval = 'daily', range = '' } = req.query;
     const data = await alpacaApi.getBars(req.params.symbol, interval, range);
+
+    // Append current bar from snapshot so the chart shows the live price
+    try {
+      const snap = await alpacaApi.getSnapshot(req.params.symbol);
+      if (snap) {
+        const trade = snap.latestTrade || {};
+        const daily = snap.dailyBar || {};
+        const minuteBar = snap.minuteBar || {};
+        const price = trade.p || daily.c || 0;
+        if (price && Array.isArray(data)) {
+          const now = new Date();
+          data.push({
+            time: now.toISOString(),
+            open:  minuteBar.o || price,
+            high:  minuteBar.h || price,
+            low:   minuteBar.l || price,
+            close: price,
+            volume: minuteBar.v || 0,
+            _live: true,
+          });
+        }
+      }
+    } catch { /* snapshot optional */ }
+
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: 'Historical data failed', details: err.message });
