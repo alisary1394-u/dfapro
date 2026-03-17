@@ -373,15 +373,28 @@ export async function getBars(symbol, interval = 'daily', range = '') {
   const start = rangeToStartDate(effectiveRange);
   const params = new URLSearchParams({
     timeframe: tf.timeframe,
-    limit: String(tf.limit),
+    limit: '10000',
     adjustment: 'split',
     feed: 'iex',
   });
   if (start) params.set('start', start);
-  const data = await alpacaFetch(
-    `${DATA_URL}/v2/stocks/${encodeURIComponent(symbol)}/bars?${params}`,
-  );
-  return (data.bars || []).map(bar => ({
+
+  // Alpaca paginates via next_page_token – collect all pages
+  let allBars = [];
+  let url = `${DATA_URL}/v2/stocks/${encodeURIComponent(symbol)}/bars?${params}`;
+  while (url) {
+    const data = await alpacaFetch(url);
+    const bars = data.bars || [];
+    allBars = allBars.concat(bars);
+    if (data.next_page_token) {
+      const p = new URLSearchParams(params);
+      p.set('page_token', data.next_page_token);
+      url = `${DATA_URL}/v2/stocks/${encodeURIComponent(symbol)}/bars?${p}`;
+    } else {
+      url = null;
+    }
+  }
+  return allBars.map(bar => ({
     time: bar.t,
     open: bar.o,
     high: bar.h,

@@ -2100,7 +2100,9 @@ export default function ChartBoard() {
               <button key={r.value} onClick={() => {
                 if (selectedRange === r.value) { setSelectedRange(null); return; }
                 setSelectedRange(r.value);
-                if (!isIntervalCompatible(selectedTf?.interval, r.value)) {
+                // Auto-adjust interval only when using Yahoo (no broker)
+                const usingBroker = (ibkrState.connected && ibkrState.useIbkr) || (alpacaState.connected && alpacaState.useAlpaca);
+                if (!usingBroker && !isIntervalCompatible(selectedTf?.interval, r.value)) {
                   const minInterval = bestIntervalForRange(r.value);
                   if (minInterval) {
                     const tf = INTERVALS.find(t => t.interval === minInterval);
