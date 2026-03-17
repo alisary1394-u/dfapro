@@ -330,29 +330,51 @@ export async function getLatestTrade(symbol) {
 }
 
 // ── Market Data: Historical Bars ──
+// Maps interval → { timeframe: Alpaca API timeframe, agg: seconds to aggregate (0 = none) }
+// Alpaca supports: 1-59Min, 1Hour, 1Day, 1Week, 1Month (multi-hour NOT supported)
 const TF_MAP = {
-  '1sec': { timeframe: '1Min' },
-  '5sec': { timeframe: '1Min' },
-  '10sec': { timeframe: '1Min' },
-  '15sec': { timeframe: '1Min' },
-  '30sec': { timeframe: '1Min' },
-  '45sec': { timeframe: '1Min' },
-  '1min': { timeframe: '1Min' },
-  '2min': { timeframe: '2Min' },
-  '3min': { timeframe: '3Min' },
-  '5min': { timeframe: '5Min' },
-  '10min': { timeframe: '10Min' },
-  '15min': { timeframe: '15Min' },
-  '30min': { timeframe: '30Min' },
-  '45min': { timeframe: '45Min' },
-  '60min': { timeframe: '1Hour' },
-  '2hour': { timeframe: '2Hour' },
-  '3hour': { timeframe: '3Hour' },
-  '4hour': { timeframe: '4Hour' },
-  'daily': { timeframe: '1Day' },
-  'weekly': { timeframe: '1Week' },
-  'monthly': { timeframe: '1Month' },
+  '1sec':  { timeframe: '1Min',   agg: 0 },
+  '5sec':  { timeframe: '1Min',   agg: 0 },
+  '10sec': { timeframe: '1Min',   agg: 0 },
+  '15sec': { timeframe: '1Min',   agg: 0 },
+  '30sec': { timeframe: '1Min',   agg: 0 },
+  '45sec': { timeframe: '1Min',   agg: 0 },
+  '1min':  { timeframe: '1Min',   agg: 0 },
+  '2min':  { timeframe: '2Min',   agg: 0 },
+  '3min':  { timeframe: '3Min',   agg: 0 },
+  '5min':  { timeframe: '5Min',   agg: 0 },
+  '10min': { timeframe: '10Min',  agg: 0 },
+  '15min': { timeframe: '15Min',  agg: 0 },
+  '30min': { timeframe: '30Min',  agg: 0 },
+  '45min': { timeframe: '45Min',  agg: 0 },
+  '60min': { timeframe: '1Hour',  agg: 0 },
+  '2hour': { timeframe: '1Hour',  agg: 7200 },   // fetch 1h, aggregate → 2h
+  '3hour': { timeframe: '1Hour',  agg: 10800 },  // fetch 1h, aggregate → 3h
+  '4hour': { timeframe: '1Hour',  agg: 14400 },  // fetch 1h, aggregate → 4h
+  'daily':   { timeframe: '1Day',   agg: 0 },
+  'weekly':  { timeframe: '1Week',  agg: 0 },
+  'monthly': { timeframe: '1Month', agg: 0 },
 };
+
+// Aggregate fine candles into larger time-bucket candles
+function aggregateBars(bars, bucketSeconds) {
+  if (!bucketSeconds || bars.length === 0) return bars;
+  const buckets = new Map();
+  for (const c of bars) {
+    const t = typeof c.time === 'string' ? Math.floor(new Date(c.time).getTime() / 1000) : c.time;
+    const key = Math.floor(t / bucketSeconds) * bucketSeconds;
+    if (!buckets.has(key)) {
+      buckets.set(key, { time: new Date(key * 1000).toISOString(), open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 });
+    } else {
+      const b = buckets.get(key);
+      b.high = Math.max(b.high, c.high);
+      b.low = Math.min(b.low, c.low);
+      b.close = c.close;
+      b.volume += (c.volume || 0);
+    }
+  }
+  return Array.from(buckets.values()).sort((a, b) => a.time.localeCompare(b.time));
+}
 
 // Convert range string (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max) to a start date
 function rangeToStartDate(range) {
@@ -410,7 +432,7 @@ export async function getBars(symbol, interval = 'daily', range = '') {
       url = null;
     }
   }
-  return allBars.map(bar => ({
+  let mapped = allBars.map(bar => ({
     time: bar.t,
     open: bar.o,
     high: bar.h,
@@ -418,6 +440,13 @@ export async function getBars(symbol, interval = 'daily', range = '') {
     close: bar.c,
     volume: bar.v,
   }));
+
+  // Aggregate into larger buckets if needed (e.g. 1Hour → 4Hour)
+  if (tf.agg > 0) {
+    mapped = aggregateBars(mapped, tf.agg);
+  }
+
+  return mapped;
 }
 
 // ── Asset Search ──

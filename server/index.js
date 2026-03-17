@@ -111,13 +111,50 @@ const toYahooSymbol = (symbol, market) => {
   return symbol;
 };
 
-const intervalMap = {
-  '1sec': '1m', '5sec': '1m', '10sec': '1m', '15sec': '1m', '30sec': '1m', '45sec': '1m',
-  '1min': '1m', '2min': '2m', '3min': '5m', '5min': '5m',
-  '10min': '15m', '15min': '15m', '30min': '30m', '45min': '60m',
-  '60min': '60m', '2hour': '60m', '3hour': '60m', '4hour': '60m',
-  'daily': '1d', 'weekly': '1wk', 'monthly': '1mo',
+// Maps requested interval → { yfInterval (what to fetch from Yahoo), aggregate (seconds per output bar, 0 = no aggregation) }
+const intervalConfig = {
+  '1sec':  { yf: '1m',  agg: 0 },  // no sub-minute in Yahoo, show 1m as-is
+  '5sec':  { yf: '1m',  agg: 0 },
+  '10sec': { yf: '1m',  agg: 0 },
+  '15sec': { yf: '1m',  agg: 0 },
+  '30sec': { yf: '1m',  agg: 0 },
+  '45sec': { yf: '1m',  agg: 0 },
+  '1min':  { yf: '1m',  agg: 0 },
+  '2min':  { yf: '2m',  agg: 0 },
+  '3min':  { yf: '1m',  agg: 180 },   // aggregate 1m bars into 3-min candles
+  '5min':  { yf: '5m',  agg: 0 },
+  '10min': { yf: '5m',  agg: 600 },   // aggregate 5m → 10m
+  '15min': { yf: '15m', agg: 0 },
+  '30min': { yf: '30m', agg: 0 },
+  '45min': { yf: '15m', agg: 2700 },  // aggregate 15m → 45m
+  '60min': { yf: '60m', agg: 0 },
+  '2hour': { yf: '60m', agg: 7200 },  // aggregate 60m → 2h
+  '3hour': { yf: '60m', agg: 10800 }, // aggregate 60m → 3h
+  '4hour': { yf: '60m', agg: 14400 }, // aggregate 60m → 4h
+  'daily':   { yf: '1d',  agg: 0 },
+  'weekly':  { yf: '1wk', agg: 0 },
+  'monthly': { yf: '1mo', agg: 0 },
 };
+
+// Aggregate fine candles into larger time-bucket candles
+function aggregateCandles(candles, bucketSeconds) {
+  if (!bucketSeconds || candles.length === 0) return candles;
+  const buckets = new Map();
+  for (const c of candles) {
+    const t = typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000);
+    const key = Math.floor(t / bucketSeconds) * bucketSeconds;
+    if (!buckets.has(key)) {
+      buckets.set(key, { time: key, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 });
+    } else {
+      const b = buckets.get(key);
+      b.high = Math.max(b.high, c.high);
+      b.low = Math.min(b.low, c.low);
+      b.close = c.close;
+      b.volume += (c.volume || 0);
+    }
+  }
+  return Array.from(buckets.values()).sort((a, b) => a.time - b.time);
+}
 
 // Yahoo Finance free-tier limits: 1m→7d, intraday→60d, EOD→unlimited
 const defaultRangeMap = {
@@ -219,9 +256,10 @@ app.get('/api/market/candles', async (req, res) => {
     const { symbol, market = 'saudi', interval = 'daily', range: reqRange } = req.query;
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
 
-    const yfInterval = intervalMap[interval] || '1d';
+    const cfg = intervalConfig[interval] || { yf: '1d', agg: 0 };
+    const yfInterval = cfg.yf;
     const range = (reqRange && validRanges.has(reqRange)) ? reqRange : (defaultRangeMap[yfInterval] || '5y');
-    const cacheKey = `candles:${symbol}:${market}:${yfInterval}:${range}`;
+    const cacheKey = `candles:${symbol}:${market}:${interval}:${range}`;
     const cached = cacheGet(cacheKey);
     if (cached) return res.json(cached);
 
@@ -235,7 +273,7 @@ app.get('/api/market/candles', async (req, res) => {
     const q = result.indicators.quote[0];
     const isIntraday = ['1m', '2m', '5m', '15m', '30m', '60m'].includes(yfInterval);
     
-    const candles = timestamps.map((t, i) => {
+    let candles = timestamps.map((t, i) => {
       if (q.open[i] == null || q.close[i] == null) return null;
       return {
         time: isIntraday ? t : new Date(t * 1000).toISOString().substring(0, 10),
@@ -246,6 +284,11 @@ app.get('/api/market/candles', async (req, res) => {
         volume: q.volume[i] || 0,
       };
     }).filter(Boolean);
+
+    // Aggregate into larger buckets if needed
+    if (cfg.agg > 0 && isIntraday) {
+      candles = aggregateCandles(candles, cfg.agg);
+    }
 
     const ttlMs = isIntraday ? TTL.candles_intraday : TTL.candles_daily;
     cacheSet(cacheKey, { candles }, ttlMs);
