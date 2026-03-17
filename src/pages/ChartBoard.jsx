@@ -1728,51 +1728,63 @@ export default function ChartBoard() {
       });
 
       // Apply saved drawings to chart
-      drawnPriceLinesRef.current = [];
-      const allMarkers = [];
-      drawings.forEach(d => {
-        if (d.type === 'horizontal') {
-          const pl = mainSeries.createPriceLine({
-            price: d.price,
-            color: d.color || '#2962ff',
-            lineWidth: 1,
-            lineStyle: LineStyle.Solid,
-            axisLabelVisible: true,
-            title: d.label || `${d.price.toFixed(2)}`,
-          });
-          drawnPriceLinesRef.current.push(pl);
-        } else if (d.type === 'fib') {
-          const diff = d.high - d.low;
-          const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-          const colors = ['#787b86', '#ef5350', '#ff9800', '#2962ff', '#26a69a', '#9c27b0', '#787b86'];
-          levels.forEach((level, i) => {
-            const levelPrice = d.high - diff * level;
-            const pl = mainSeries.createPriceLine({
-              price: levelPrice,
-              color: colors[i],
+      // (initial application - subsequent updates handled by separate useEffect)
+      const applyDrawings = () => {
+        const series = mainSeriesRef.current;
+        if (!series) return;
+        // Remove old price lines
+        drawnPriceLinesRef.current.forEach(pl => {
+          try { series.removePriceLine(pl); } catch {}
+        });
+        drawnPriceLinesRef.current = [];
+        const allMarkers = [];
+        drawings.forEach(d => {
+          if (d.type === 'horizontal') {
+            const pl = series.createPriceLine({
+              price: d.price,
+              color: d.color || '#2962ff',
               lineWidth: 1,
-              lineStyle: LineStyle.Dashed,
+              lineStyle: LineStyle.Solid,
               axisLabelVisible: true,
-              title: `${(level * 100).toFixed(1)}%`,
+              title: d.label || `${d.price.toFixed(2)}`,
             });
             drawnPriceLinesRef.current.push(pl);
-          });
-        } else if (d.type === 'trendline' && d.markers) {
-          allMarkers.push(...d.markers);
-        } else if (d.type === 'marker') {
-          allMarkers.push({
-            time: d.time,
-            position: 'aboveBar',
-            color: d.color || '#d4a843',
-            shape: d.shape || 'arrowUp',
-            text: d.text || '',
-          });
+          } else if (d.type === 'fib') {
+            const diff = d.high - d.low;
+            const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+            const colors = ['#787b86', '#ef5350', '#ff9800', '#2962ff', '#26a69a', '#9c27b0', '#787b86'];
+            levels.forEach((level, i) => {
+              const levelPrice = d.high - diff * level;
+              const pl = series.createPriceLine({
+                price: levelPrice,
+                color: colors[i],
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: `${(level * 100).toFixed(1)}%`,
+              });
+              drawnPriceLinesRef.current.push(pl);
+            });
+          } else if (d.type === 'trendline' && d.markers) {
+            allMarkers.push(...d.markers);
+          } else if (d.type === 'marker') {
+            allMarkers.push({
+              time: d.time,
+              position: 'aboveBar',
+              color: d.color || '#d4a843',
+              shape: d.shape || 'arrowUp',
+              text: d.text || '',
+            });
+          }
+        });
+        if (allMarkers.length > 0) {
+          const sorted = allMarkers.sort((a, b) => (a.time > b.time ? 1 : -1));
+          series.setMarkers(sorted);
+        } else {
+          series.setMarkers([]);
         }
-      });
-      if (allMarkers.length > 0) {
-        const sorted = allMarkers.sort((a, b) => (a.time > b.time ? 1 : -1));
-        mainSeries.setMarkers(sorted);
-      }
+      };
+      applyDrawings();
 
       chart.timeScale().fitContent();
       mainChartRef.current = chart;
@@ -1885,7 +1897,64 @@ export default function ChartBoard() {
         if (ref.current) { try { ref.current.remove(); } catch (_) {} ref.current = null; }
       });
     };
-  }, [candles, chartType, overlays, subs, drawings]);
+  }, [candles, chartType, overlays, subs]);
+
+  // ── Separate drawings effect (does NOT rebuild the chart) ──
+  useEffect(() => {
+    const series = mainSeriesRef.current;
+    if (!series) return;
+    // Remove old price lines
+    drawnPriceLinesRef.current.forEach(pl => {
+      try { series.removePriceLine(pl); } catch {}
+    });
+    drawnPriceLinesRef.current = [];
+    const allMarkers = [];
+    drawings.forEach(d => {
+      if (d.type === 'horizontal') {
+        const pl = series.createPriceLine({
+          price: d.price,
+          color: d.color || '#2962ff',
+          lineWidth: 1,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: d.label || `${d.price.toFixed(2)}`,
+        });
+        drawnPriceLinesRef.current.push(pl);
+      } else if (d.type === 'fib') {
+        const diff = d.high - d.low;
+        const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+        const colors = ['#787b86', '#ef5350', '#ff9800', '#2962ff', '#26a69a', '#9c27b0', '#787b86'];
+        levels.forEach((level, i) => {
+          const levelPrice = d.high - diff * level;
+          const pl = series.createPriceLine({
+            price: levelPrice,
+            color: colors[i],
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `${(level * 100).toFixed(1)}%`,
+          });
+          drawnPriceLinesRef.current.push(pl);
+        });
+      } else if (d.type === 'trendline' && d.markers) {
+        allMarkers.push(...d.markers);
+      } else if (d.type === 'marker') {
+        allMarkers.push({
+          time: d.time,
+          position: 'aboveBar',
+          color: d.color || '#d4a843',
+          shape: d.shape || 'arrowUp',
+          text: d.text || '',
+        });
+      }
+    });
+    if (allMarkers.length > 0) {
+      const sorted = allMarkers.sort((a, b) => (a.time > b.time ? 1 : -1));
+      series.setMarkers(sorted);
+    } else {
+      series.setMarkers([]);
+    }
+  }, [drawings]);
 
   // ── Handlers ──
   const handleSelect = (stock) => {
@@ -1965,7 +2034,7 @@ export default function ChartBoard() {
   // RENDER
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0c0e14] -m-4 md:-m-6 lg:-m-8 relative select-none" dir="ltr">
+    <div className="flex overflow-hidden bg-[#0c0e14] -m-4 md:-m-5 lg:-m-7 relative select-none" dir="ltr" style={{ height: 'calc(100vh - 3rem)' }}>
 
       {/* ── LEFT: Drawing Tools ── */}
       <DrawingToolbar
@@ -1978,23 +2047,23 @@ export default function ChartBoard() {
       {/* ── CENTER ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* ══════ TOP TOOLBAR ══════ */}
-        <div className="flex items-center gap-1 px-2 py-[5px] border-b border-[#2a2e39] bg-[#131722] shrink-0">
+        {/* ══════ TOP TOOLBAR - ROW 1: Symbol + Timeframes + Range ══════ */}
+        <div className="flex items-center gap-1 px-2 py-[4px] border-b border-[#2a2e39] bg-[#131722] shrink-0 overflow-x-auto">
 
           {/* Symbol */}
-          <div className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded hover:bg-[#1e222d] cursor-pointer transition-colors">
+          <div className="flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded hover:bg-[#1e222d] cursor-pointer transition-colors shrink-0">
             <span className="text-[13px] font-black text-[#d1d4dc]">{selectedStock?.symbol}</span>
-            <span className="text-[10px] text-[#787b86] max-w-[100px] truncate">{selectedStock?.name}</span>
+            <span className="text-[10px] text-[#787b86] max-w-[80px] truncate">{selectedStock?.name}</span>
             {market === "saudi" ? <span className="text-[8px] text-[#787b86] bg-[#1e222d] px-1 rounded">تداول</span> : <span className="text-[8px] text-[#787b86] bg-[#1e222d] px-1 rounded">NYSE</span>}
           </div>
 
-          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+          <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
           {/* Timeframes */}
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-0 shrink-0">
             {TIMEFRAMES.map(tf => (
               <button key={tf.value} onClick={() => { setTimeframe(tf.value); setSelectedRange(null); }}
-                className={`px-2 py-1 text-[11px] font-semibold transition-all rounded ${
+                className={`px-1.5 py-0.5 text-[11px] font-semibold transition-all rounded ${
                   timeframe === tf.value ? "text-[#d1d4dc] bg-[#2962ff]/20" : "text-[#787b86] hover:text-[#d1d4dc]"
                 }`}>
                 {tf.label}
@@ -2002,7 +2071,7 @@ export default function ChartBoard() {
             ))}
           </div>
 
-          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+          <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
           {/* Range selector */}
           {(() => {
@@ -2012,10 +2081,10 @@ export default function ChartBoard() {
             const rangeKey = isIntraday ? "intraday" : isWeekly ? "weekly" : isMonthly ? "monthly" : "daily";
             const ranges = RANGE_OPTIONS[rangeKey];
             return (
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-0 shrink-0">
                 {ranges.map(r => (
                   <button key={r.value} onClick={() => setSelectedRange(selectedRange === r.value ? null : r.value)}
-                    className={`px-2 py-1 text-[10px] font-semibold transition-all rounded ${
+                    className={`px-1.5 py-0.5 text-[10px] font-semibold transition-all rounded ${
                       selectedRange === r.value ? "text-[#d4a843] bg-[#d4a843]/15" : "text-[#787b86] hover:text-[#d1d4dc]"
                     }`}>
                     {r.label}
@@ -2025,14 +2094,14 @@ export default function ChartBoard() {
             );
           })()}
 
-          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+          <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
           {/* Chart type */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button onClick={() => setShowChartTypeMenu(!showChartTypeMenu)}
-              className="flex items-center gap-1 px-2 py-1 text-[#787b86] hover:text-[#d1d4dc] rounded hover:bg-[#1e222d] transition-all text-[11px]">
-              {chartType === "line" || chartType === "area" ? <LineChart className="w-4 h-4" /> : <BarChart2 className="w-4 h-4" />}
-              <ChevronDown className="w-3 h-3" />
+              className="flex items-center gap-1 px-1.5 py-0.5 text-[#787b86] hover:text-[#d1d4dc] rounded hover:bg-[#1e222d] transition-all text-[11px]">
+              {chartType === "line" || chartType === "area" ? <LineChart className="w-3.5 h-3.5" /> : <BarChart2 className="w-3.5 h-3.5" />}
+              <ChevronDown className="w-2.5 h-2.5" />
             </button>
             {showChartTypeMenu && (
               <>
@@ -2051,12 +2120,12 @@ export default function ChartBoard() {
             )}
           </div>
 
-          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+          <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
           {/* Indicators */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button onClick={() => setShowIndicators(!showIndicators)}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold transition-all ${
                 showIndicators ? "bg-[#2962ff]/20 text-[#2962ff]" : "text-[#787b86] hover:text-[#d1d4dc]"
               }`}>
               <Activity className="w-3.5 h-3.5" />
@@ -2071,24 +2140,24 @@ export default function ChartBoard() {
 
           <div className="flex-1" />
 
-          {/* Price */}
+          {/* Price + Quote */}
           {quote && (
-            <div className="flex items-center gap-2 text-[11px]">
+            <div className="flex items-center gap-1.5 text-[11px] shrink-0">
               <span className="font-bold text-[#d1d4dc]">{quote.price?.toFixed(2)}</span>
               <span className={`font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
                 {isUp ? "+" : ""}{quote.change?.toFixed(2)}
               </span>
-              <span className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${isUp ? "text-[#26a69a] bg-[#26a69a]/10" : "text-[#ef5350] bg-[#ef5350]/10"}`}>
+              <span className={`font-bold px-1 py-0.5 rounded text-[10px] ${isUp ? "text-[#26a69a] bg-[#26a69a]/10" : "text-[#ef5350] bg-[#ef5350]/10"}`}>
                 {isUp ? "+" : ""}{(change || 0).toFixed(2)}%
               </span>
             </div>
           )}
 
-          <div className="w-px h-5 bg-[#2a2e39] mx-1" />
+          <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
           {/* AI */}
           <button onClick={() => setShowAI(!showAI)}
-            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
               showAI ? "bg-[#d4a843]/20 text-[#d4a843]" : "text-[#787b86] hover:text-[#d4a843]"
             }`}>
             <Brain className="w-3.5 h-3.5" />
@@ -2097,43 +2166,43 @@ export default function ChartBoard() {
 
           {/* IBKR Connection */}
           <button onClick={() => { setShowIbkr(!showIbkr); setShowAlpaca(false); }}
-            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
               ibkrState.connected
                 ? (showIbkr ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
                 : (showIbkr ? "bg-[#ff9800]/20 text-[#ff9800]" : "text-[#787b86] hover:text-[#ff9800]")
             }`}>
             {ibkrState.connected ? <Wifi className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">IBKR</span>
+            IBKR
             {ibkrState.useIbkr && <span className="w-1.5 h-1.5 rounded-full bg-[#26a69a] animate-pulse" />}
           </button>
 
           {/* Alpaca Connection */}
           <button onClick={() => { setShowAlpaca(!showAlpaca); setShowIbkr(false); }}
-            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all ${
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
               alpacaState.connected
                 ? (showAlpaca ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
                 : (showAlpaca ? "bg-[#ffeb3b]/20 text-[#ffeb3b]" : "text-[#787b86] hover:text-[#ffeb3b]")
             }`}>
             {alpacaState.connected ? <Wifi className="w-3.5 h-3.5" /> : <Key className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">Alpaca</span>
+            Alpaca
             {alpacaState.useAlpaca && <span className="w-1.5 h-1.5 rounded-full bg-[#ffeb3b] animate-pulse" />}
           </button>
 
           {/* Screenshot */}
           <button onClick={takeScreenshot} title="لقطة شاشة (Ctrl+S)"
-            className="p-1.5 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all">
+            className="p-1 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all shrink-0">
             <Camera className="w-3.5 h-3.5" />
           </button>
 
           {/* Fullscreen */}
           <button onClick={toggleFullscreen}
-            className="p-1.5 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all">
+            className="p-1 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all shrink-0">
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
 
           {/* Toggle sidebar */}
           <button onClick={() => setShowRightSidebar(!showRightSidebar)}
-            className="p-1.5 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all">
+            className="p-1 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all shrink-0">
             {showRightSidebar ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
           </button>
         </div>
