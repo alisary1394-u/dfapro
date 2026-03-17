@@ -163,6 +163,15 @@ const MAX_RANGE_FOR_INTERVAL = {
   'monthly': null,
 };
 
+// Bucket size in seconds for each interval (used for countdown timer + live candle alignment)
+const BUCKET_SECONDS = {
+  '1sec': 1, '5sec': 5, '10sec': 10, '15sec': 15, '30sec': 30, '45sec': 45,
+  '1min': 60, '2min': 120, '3min': 180, '5min': 300, '10min': 600,
+  '15min': 900, '30min': 1800, '45min': 2700, '60min': 3600,
+  '2hour': 7200, '3hour': 10800, '4hour': 14400,
+  'daily': 86400, 'weekly': 604800, 'monthly': 2592000,
+};
+
 // Given a range, find the smallest interval that supports it
 const RANGE_ORDER = ['1d','5d','1mo','3mo','6mo','1y','2y','5y','10y','ytd','max'];
 function bestIntervalForRange(range) {
@@ -1427,14 +1436,7 @@ export default function ChartBoard() {
             if (series && price) {
               const tfInterval = selectedTf?.interval;
               const isIntra = isIntradayInterval(tfInterval);
-              const bMap = {
-                '1sec': 1, '5sec': 5, '10sec': 10, '15sec': 15, '30sec': 30, '45sec': 45,
-                '1min': 60, '2min': 120, '3min': 180, '5min': 300, '10min': 600,
-                '15min': 900, '30min': 1800, '45min': 2700, '60min': 3600,
-                '2hour': 7200, '3hour': 10800, '4hour': 14400,
-                'daily': 86400, 'weekly': 604800, 'monthly': 2592000,
-              };
-              const bucket = bMap[tfInterval] || 60;
+              const bucket = BUCKET_SECONDS[tfInterval] || 60;
               const nowUnix = Math.floor(Date.now() / 1000);
               const candleTime = isIntra
                 ? Math.floor(nowUnix / bucket) * bucket
@@ -2038,6 +2040,80 @@ export default function ChartBoard() {
       volumeSeriesRef.current = null;
     };
   }, [candles, chartType, overlays, subs]);
+
+  // ── Candle countdown timer (like TradingView) ──
+  useEffect(() => {
+    const container = mainContainerRef.current;
+    if (!container || !candles?.length) return;
+
+    const bucket = BUCKET_SECONDS[selectedTf?.interval] || 60;
+    const isIntra = isIntradayInterval(selectedTf?.interval);
+    // Don't show countdown for daily+ intervals
+    if (!isIntra) return;
+
+    // Create the countdown element
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position: absolute; right: 0; z-index: 15; pointer-events: none;
+      font-family: 'Tajawal', monospace; font-size: 10px; font-weight: 700;
+      text-align: center; min-width: 55px; padding: 1px 4px;
+      color: #131722; border-radius: 0 0 0 3px;
+    `;
+    container.style.position = 'relative';
+    container.appendChild(el);
+
+    const updateCountdown = () => {
+      const chart = mainChartRef.current;
+      const series = mainSeriesRef.current;
+      if (!chart || !series) return;
+
+      const nowSec = Math.floor(Date.now() / 1000);
+      const bucketStart = Math.floor(nowSec / bucket) * bucket;
+      const remaining = bucket - (nowSec - bucketStart);
+
+      // Format remaining time
+      let text;
+      if (remaining >= 3600) {
+        const h = Math.floor(remaining / 3600);
+        const m = Math.floor((remaining % 3600) / 60);
+        const s = remaining % 60;
+        text = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      } else if (remaining >= 60) {
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        text = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      } else {
+        text = `00:${String(remaining).padStart(2, '0')}`;
+      }
+
+      // Get price coordinate from last candle to position the timer
+      const lastCandle = candles[candles.length - 1];
+      const lastPrice = liveBarRef.current?.close || lastCandle?.close;
+      if (!lastPrice) return;
+
+      try {
+        const priceY = series.priceToCoordinate(lastPrice);
+        if (priceY != null) {
+          // Position just below the price label
+          el.style.top = `${Math.round(priceY + 13)}px`;
+        }
+      } catch {}
+
+      // Color: up = green, down = red
+      const prevClose = candles.length >= 2 ? candles[candles.length - 2]?.close : lastCandle?.open;
+      const isUp = lastPrice >= (prevClose || lastPrice);
+      el.style.backgroundColor = isUp ? '#26a69a' : '#ef5350';
+      el.textContent = text;
+    };
+
+    updateCountdown();
+    const iv = setInterval(updateCountdown, 1000);
+
+    return () => {
+      clearInterval(iv);
+      try { container.removeChild(el); } catch {}
+    };
+  }, [candles, selectedTf]);
 
   // ── Separate drawings effect (does NOT rebuild the chart) ──
   useEffect(() => {
