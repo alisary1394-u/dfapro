@@ -83,13 +83,6 @@ const US_STOCKS = [
 // Candle interval (size of each candle) — independent from range
 // Categorised like TradingView; `yahoo: false` means broker-only interval
 const ALL_INTERVALS = [
-  // ثوانٍ
-  { label: "1 ثانية", shortLabel: "1ث", value: "1S", interval: "1sec", category: "ثوانٍ", yahoo: false },
-  { label: "5 ثوان", shortLabel: "5ث", value: "5S", interval: "5sec", category: "ثوانٍ", yahoo: false },
-  { label: "10 ثوان", shortLabel: "10ث", value: "10S", interval: "10sec", category: "ثوانٍ", yahoo: false },
-  { label: "15 ثانية", shortLabel: "15ث", value: "15S", interval: "15sec", category: "ثوانٍ", yahoo: false },
-  { label: "30 ثانية", shortLabel: "30ث", value: "30S", interval: "30sec", category: "ثوانٍ", yahoo: false },
-  { label: "45 ثانية", shortLabel: "45ث", value: "45S", interval: "45sec", category: "ثوانٍ", yahoo: false },
   // دقائق
   { label: "1 دقيقة", shortLabel: "1د", value: "1M", interval: "1min", category: "دقائق", yahoo: true },
   { label: "2 دقيقتين", shortLabel: "2د", value: "2M", interval: "2min", category: "دقائق", yahoo: true },
@@ -114,14 +107,13 @@ const ALL_INTERVALS = [
 const INTERVALS = ALL_INTERVALS;
 
 // Category order for the dropdown
-const INTERVAL_CATEGORIES = ["ثوانٍ", "دقائق", "ساعات", "أيام", "أسابيع", "أشهر"];
+const INTERVAL_CATEGORIES = ["دقائق", "ساعات", "أيام", "أسابيع", "أشهر"];
 
 // Default favorites (values)
 const DEFAULT_FAVORITES = ["1M", "5M", "15M", "1H", "1D"];
 
 // All intraday interval keys (format time as unix, not date string)
 const INTRADAY_INTERVALS = new Set([
-  "1sec","5sec","10sec","15sec","30sec","45sec",
   "1min","2min","3min","5min","10min","15min","30min","45min",
   "60min","2hour","3hour","4hour",
 ]);
@@ -145,7 +137,6 @@ const RANGES = [
 // Yahoo Finance max range per interval (API hard limits)
 // 1m→7d, 5m→60d, 15m→60d, 30m→60d, 60m→730d, daily/weekly/monthly→unlimited
 const MAX_RANGE_FOR_INTERVAL = {
-  '1sec': null, '5sec': null, '10sec': null, '15sec': null, '30sec': null, '45sec': null,
   '1min': ['1d', '5d'],
   '2min': ['1d', '5d'],
   '3min': null, // broker-only
@@ -165,7 +156,6 @@ const MAX_RANGE_FOR_INTERVAL = {
 
 // Bucket size in seconds for each interval (used for countdown timer + live candle alignment)
 const BUCKET_SECONDS = {
-  '1sec': 1, '5sec': 5, '10sec': 10, '15sec': 15, '30sec': 30, '45sec': 45,
   '1min': 60, '2min': 120, '3min': 180, '5min': 300, '10min': 600,
   '15min': 900, '30min': 1800, '45min': 2700, '60min': 3600,
   '2hour': 7200, '3hour': 10800, '4hour': 14400,
@@ -2041,23 +2031,22 @@ export default function ChartBoard() {
     };
   }, [candles, chartType, overlays, subs]);
 
-  // ── Candle countdown timer (like TradingView) ──
+  // ── Candle countdown timer (inside price label, like TradingView) ──
   useEffect(() => {
     const container = mainContainerRef.current;
     if (!container || !candles?.length) return;
 
     const bucket = BUCKET_SECONDS[selectedTf?.interval] || 60;
     const isIntra = isIntradayInterval(selectedTf?.interval);
-    // Don't show countdown for daily+ intervals
     if (!isIntra) return;
 
-    // Create the countdown element
+    // Create the countdown element — styled to look like part of the price label
     const el = document.createElement('div');
     el.style.cssText = `
       position: absolute; right: 0; z-index: 15; pointer-events: none;
-      font-family: 'Tajawal', monospace; font-size: 10px; font-weight: 700;
-      text-align: center; min-width: 55px; padding: 1px 4px;
-      color: #131722; border-radius: 0 0 0 3px;
+      font-family: monospace, 'Tajawal'; font-size: 11px; font-weight: 700;
+      text-align: center; min-width: 55px; padding: 2px 5px;
+      color: #fff; line-height: 1;
     `;
     container.style.position = 'relative';
     container.appendChild(el);
@@ -2086,7 +2075,7 @@ export default function ChartBoard() {
         text = `00:${String(remaining).padStart(2, '0')}`;
       }
 
-      // Get price coordinate from last candle to position the timer
+      // Get price coordinate from last candle to position inside price label
       const lastCandle = candles[candles.length - 1];
       const lastPrice = liveBarRef.current?.close || lastCandle?.close;
       if (!lastPrice) return;
@@ -2094,12 +2083,12 @@ export default function ChartBoard() {
       try {
         const priceY = series.priceToCoordinate(lastPrice);
         if (priceY != null) {
-          // Position just below the price label
-          el.style.top = `${Math.round(priceY + 13)}px`;
+          // Position exactly aligned with the price label (inside its box)
+          el.style.top = `${Math.round(priceY - 1)}px`;
         }
       } catch {}
 
-      // Color: up = green, down = red
+      // Color matches the price label: up = green, down = red
       const prevClose = candles.length >= 2 ? candles[candles.length - 2]?.close : lastCandle?.open;
       const isUp = lastPrice >= (prevClose || lastPrice);
       el.style.backgroundColor = isUp ? '#26a69a' : '#ef5350';

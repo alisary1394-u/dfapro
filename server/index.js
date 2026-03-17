@@ -113,12 +113,6 @@ const toYahooSymbol = (symbol, market) => {
 
 // Maps requested interval → { yfInterval (what to fetch from Yahoo), aggregate (seconds per output bar, 0 = no aggregation) }
 const intervalConfig = {
-  '1sec':  { yf: '1m',  agg: 0 },  // no sub-minute in Yahoo, show 1m as-is
-  '5sec':  { yf: '1m',  agg: 0 },
-  '10sec': { yf: '1m',  agg: 0 },
-  '15sec': { yf: '1m',  agg: 0 },
-  '30sec': { yf: '1m',  agg: 0 },
-  '45sec': { yf: '1m',  agg: 0 },
   '1min':  { yf: '1m',  agg: 0 },
   '2min':  { yf: '2m',  agg: 0 },
   '3min':  { yf: '1m',  agg: 180 },   // aggregate 1m bars into 3-min candles

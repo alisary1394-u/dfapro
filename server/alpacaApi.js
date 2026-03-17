@@ -333,12 +333,6 @@ export async function getLatestTrade(symbol) {
 // Maps interval → { timeframe: Alpaca API timeframe, agg: seconds to aggregate (0 = none) }
 // Alpaca supports: 1-59Min, 1Hour, 1Day, 1Week, 1Month (multi-hour NOT supported)
 const TF_MAP = {
-  '1sec':  { timeframe: '1Min',   agg: 0 },
-  '5sec':  { timeframe: '1Min',   agg: 0 },
-  '10sec': { timeframe: '1Min',   agg: 0 },
-  '15sec': { timeframe: '1Min',   agg: 0 },
-  '30sec': { timeframe: '1Min',   agg: 0 },
-  '45sec': { timeframe: '1Min',   agg: 0 },
   '1min':  { timeframe: '1Min',   agg: 0 },
   '2min':  { timeframe: '2Min',   agg: 0 },
   '3min':  { timeframe: '3Min',   agg: 0 },
@@ -398,7 +392,6 @@ function rangeToStartDate(range) {
 
 // Default range per interval if none specified
 const DEFAULT_RANGE = {
-  '1sec': '1d', '5sec': '1d', '10sec': '1d', '15sec': '1d', '30sec': '1d', '45sec': '1d',
   '1min': '1d', '2min': '1d', '3min': '5d', '5min': '5d',
   '10min': '1mo', '15min': '1mo', '30min': '1mo', '45min': '3mo',
   '60min': '3mo', '2hour': '6mo', '3hour': '6mo', '4hour': '1y',
