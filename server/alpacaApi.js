@@ -331,14 +331,21 @@ export async function getLatestTrade(symbol) {
 
 // ── Market Data: Historical Bars ──
 const TF_MAP = {
-  '1min': { timeframe: '1Min', limit: 390 },
-  '5min': { timeframe: '5Min', limit: 390 },
-  '15min': { timeframe: '15Min', limit: 300 },
-  '30min': { timeframe: '30Min', limit: 200 },
-  '60min': { timeframe: '1Hour', limit: 200 },
-  'daily': { timeframe: '1Day', limit: 365 },
-  'weekly': { timeframe: '1Week', limit: 200 },
-  'monthly': { timeframe: '1Month', limit: 120 },
+  '1min': { timeframe: '1Min' },
+  '2min': { timeframe: '2Min' },
+  '3min': { timeframe: '3Min' },
+  '5min': { timeframe: '5Min' },
+  '10min': { timeframe: '10Min' },
+  '15min': { timeframe: '15Min' },
+  '30min': { timeframe: '30Min' },
+  '45min': { timeframe: '45Min' },
+  '60min': { timeframe: '1Hour' },
+  '2hour': { timeframe: '2Hour' },
+  '3hour': { timeframe: '3Hour' },
+  '4hour': { timeframe: '4Hour' },
+  'daily': { timeframe: '1Day' },
+  'weekly': { timeframe: '1Week' },
+  'monthly': { timeframe: '1Month' },
 };
 
 // Convert range string (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max) to a start date
@@ -363,8 +370,10 @@ function rangeToStartDate(range) {
 
 // Default range per interval if none specified
 const DEFAULT_RANGE = {
-  '1min': '1d', '5min': '5d', '15min': '1mo', '30min': '1mo',
-  '60min': '3mo', 'daily': '5y', 'weekly': 'max', 'monthly': 'max',
+  '1min': '1d', '2min': '1d', '3min': '5d', '5min': '5d',
+  '10min': '1mo', '15min': '1mo', '30min': '1mo', '45min': '3mo',
+  '60min': '3mo', '2hour': '6mo', '3hour': '6mo', '4hour': '1y',
+  'daily': '5y', 'weekly': 'max', 'monthly': 'max',
 };
 
 export async function getBars(symbol, interval = 'daily', range = '') {

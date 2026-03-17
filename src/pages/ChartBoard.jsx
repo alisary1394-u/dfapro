@@ -81,16 +81,43 @@ const US_STOCKS = [
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 // Candle interval (size of each candle) — independent from range
-const INTERVALS = [
-  { label: "1د", value: "1M", interval: "1min" },
-  { label: "5د", value: "5M", interval: "5min" },
-  { label: "15د", value: "15M", interval: "15min" },
-  { label: "30د", value: "30M", interval: "30min" },
-  { label: "1س", value: "1H", interval: "60min" },
-  { label: "يوم", value: "1D", interval: "daily" },
-  { label: "أسبوع", value: "1W", interval: "weekly" },
-  { label: "شهر", value: "1MO", interval: "monthly" },
+// Categorised like TradingView; `yahoo: false` means broker-only interval
+const ALL_INTERVALS = [
+  // دقائق
+  { label: "1 دقيقة", shortLabel: "1د", value: "1M", interval: "1min", category: "دقائق", yahoo: true },
+  { label: "2 دقيقتين", shortLabel: "2د", value: "2M", interval: "2min", category: "دقائق", yahoo: true },
+  { label: "3 دقائق", shortLabel: "3د", value: "3M", interval: "3min", category: "دقائق", yahoo: false },
+  { label: "5 دقائق", shortLabel: "5د", value: "5M", interval: "5min", category: "دقائق", yahoo: true },
+  { label: "10 دقائق", shortLabel: "10د", value: "10M", interval: "10min", category: "دقائق", yahoo: false },
+  { label: "15 دقيقة", shortLabel: "15د", value: "15M", interval: "15min", category: "دقائق", yahoo: true },
+  { label: "30 دقيقة", shortLabel: "30د", value: "30M", interval: "30min", category: "دقائق", yahoo: true },
+  { label: "45 دقيقة", shortLabel: "45د", value: "45M", interval: "45min", category: "دقائق", yahoo: false },
+  // ساعات
+  { label: "1 ساعة", shortLabel: "1س", value: "1H", interval: "60min", category: "ساعات", yahoo: true },
+  { label: "2 ساعة", shortLabel: "2س", value: "2H", interval: "2hour", category: "ساعات", yahoo: false },
+  { label: "3 ساعات", shortLabel: "3س", value: "3H", interval: "3hour", category: "ساعات", yahoo: false },
+  { label: "4 ساعات", shortLabel: "4س", value: "4H", interval: "4hour", category: "ساعات", yahoo: false },
+  // أيام / أسابيع / أشهر
+  { label: "يومي", shortLabel: "يوم", value: "1D", interval: "daily", category: "أيام", yahoo: true },
+  { label: "أسبوعي", shortLabel: "أسبوع", value: "1W", interval: "weekly", category: "أسابيع", yahoo: true },
+  { label: "شهري", shortLabel: "شهر", value: "1MO", interval: "monthly", category: "أشهر", yahoo: true },
 ];
+
+// For backwards compat: flat array alias
+const INTERVALS = ALL_INTERVALS;
+
+// Category order for the dropdown
+const INTERVAL_CATEGORIES = ["دقائق", "ساعات", "أيام", "أسابيع", "أشهر"];
+
+// Default favorites (values)
+const DEFAULT_FAVORITES = ["1M", "5M", "15M", "1H", "1D"];
+
+// All intraday interval keys (format time as unix, not date string)
+const INTRADAY_INTERVALS = new Set([
+  "1min","2min","3min","5min","10min","15min","30min","45min",
+  "60min","2hour","3hour","4hour",
+]);
+const isIntradayInterval = (interval) => INTRADAY_INTERVALS.has(interval);
 
 // Time range (how far back to look) — fixed, always all options shown
 const RANGES = [
@@ -111,11 +138,18 @@ const RANGES = [
 // 1m→7d, 5m→60d, 15m→60d, 30m→60d, 60m→730d, daily/weekly/monthly→unlimited
 const MAX_RANGE_FOR_INTERVAL = {
   '1min': ['1d', '5d'],
+  '2min': ['1d', '5d'],
+  '3min': null, // broker-only
   '5min': ['1d', '5d', '1mo'],
+  '10min': null, // broker-only
   '15min': ['1d', '5d', '1mo'],
   '30min': ['1d', '5d', '1mo'],
+  '45min': null, // broker-only
   '60min': ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', 'ytd'],
-  'daily': null, // all ranges
+  '2hour': null, // broker-only
+  '3hour': null, // broker-only
+  '4hour': null, // broker-only
+  'daily': null,
   'weekly': null,
   'monthly': null,
 };
@@ -1160,6 +1194,11 @@ export default function ChartBoard() {
   const [activeTool, setActiveTool] = useState("cursor");
   const [drawings, setDrawings] = useState([]);
   const [showChartTypeMenu, setShowChartTypeMenu] = useState(false);
+  const [showIntervalMenu, setShowIntervalMenu] = useState(false);
+  const [intervalFavorites, setIntervalFavorites] = useState(() => {
+    try { const s = localStorage.getItem('chartboard_interval_favs'); return s ? JSON.parse(s) : DEFAULT_FAVORITES; }
+    catch { return DEFAULT_FAVORITES; }
+  });
   const [showIbkr, setShowIbkr] = useState(false);
   const [ibkrState, setIbkrState] = useState({
     connected: false,
@@ -1212,7 +1251,23 @@ export default function ChartBoard() {
   const activeToolRef = useRef(activeTool);
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
 
-  const selectedTf = useMemo(() => INTERVALS.find(t => t.value === timeframe) || INTERVALS[5], [timeframe]);
+  const selectedTf = useMemo(() => INTERVALS.find(t => t.value === timeframe) || INTERVALS.find(t => t.value === '1D'), [timeframe]);
+
+  const usingBroker = useMemo(() => (ibkrState.connected && ibkrState.useIbkr) || (alpacaState.connected && alpacaState.useAlpaca), [ibkrState, alpacaState]);
+
+  const toggleFavorite = useCallback((value) => {
+    setIntervalFavorites(prev => {
+      const next = prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value];
+      localStorage.setItem('chartboard_interval_favs', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  // Filter intervals: show all when broker, hide broker-only when Yahoo
+  const availableIntervals = useMemo(() => {
+    if (usingBroker) return ALL_INTERVALS;
+    return ALL_INTERVALS.filter(i => i.yahoo);
+  }, [usingBroker]);
 
   // ── Init IBKR from saved config ──
   useEffect(() => {
@@ -1397,7 +1452,7 @@ export default function ChartBoard() {
       // 2. Push directly to chart series — no React re-render needed
       const series = mainSeriesRef.current;
       if (!series) return;
-      const isIntraday = ["1min","5min","15min","30min","60min"].includes(selectedTf?.interval);
+      const isIntraday = isIntradayInterval(selectedTf?.interval);
       const now = isIntraday
         ? Math.floor(Date.now() / 1000)
         : new Date().toISOString().substring(0, 10);
@@ -1433,7 +1488,7 @@ export default function ChartBoard() {
 
         if (ibkrCandles.length > 0) {
           // Normalize times
-          const isIntraday = ["1min", "5min", "15min", "30min", "60min"].includes(selectedTf.interval);
+          const isIntraday = isIntradayInterval(selectedTf.interval);
           const normalized = ibkrCandles.map(c => {
             let t = c.time;
             if (!isIntraday && typeof t === 'number') {
@@ -1464,7 +1519,7 @@ export default function ChartBoard() {
         const alpacaCandles = parseAlpacaBars(bars);
 
         if (alpacaCandles.length > 0) {
-          const isIntraday = ["1min", "5min", "15min", "30min", "60min"].includes(selectedTf.interval);
+          const isIntraday = isIntradayInterval(selectedTf.interval);
           const normalized = alpacaCandles.map(c => {
             let t = c.time;
             if (isIntraday) {
@@ -1498,7 +1553,7 @@ export default function ChartBoard() {
       const rawCandles = data?.candles || [];
       if (rawCandles.length === 0) { setLoading(false); return; }
 
-      const isIntraday = ["1min", "5min", "15min", "30min", "60min"].includes(selectedTf.interval);
+      const isIntraday = isIntradayInterval(selectedTf.interval);
       const normalized = rawCandles.map(c => {
         let t;
         if (isIntraday) {
@@ -2080,16 +2135,57 @@ export default function ChartBoard() {
 
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
-          {/* Intervals (candle size) */}
-          <div className="flex items-center gap-0 shrink-0">
-            {INTERVALS.map(tf => (
+          {/* Intervals: Favorites row + dropdown trigger */}
+          <div className="flex items-center gap-0 shrink-0 relative">
+            {/* Favorite interval quick buttons */}
+            {ALL_INTERVALS.filter(t => intervalFavorites.includes(t.value)).map(tf => (
               <button key={tf.value} onClick={() => setTimeframe(tf.value)}
                 className={`px-1.5 py-0.5 text-[11px] font-semibold transition-all rounded ${
                   timeframe === tf.value ? "text-[#d1d4dc] bg-[#2962ff]/20" : "text-[#787b86] hover:text-[#d1d4dc]"
                 }`}>
-                {tf.label}
+                {tf.shortLabel}
               </button>
             ))}
+            {/* Dropdown trigger */}
+            <button onClick={() => setShowIntervalMenu(v => !v)}
+              className={`px-1 py-0.5 text-[11px] font-semibold transition-all rounded flex items-center gap-0.5 ${showIntervalMenu ? "text-[#d1d4dc] bg-[#2962ff]/20" : "text-[#787b86] hover:text-[#d1d4dc]"}`}>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {/* ── Interval Dropdown Menu ── */}
+            {showIntervalMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowIntervalMenu(false)} />
+                <div className="absolute top-full left-0 mt-1 bg-[#131722] border border-[#2a2e39] rounded-lg shadow-2xl z-50 w-56 max-h-[70vh] overflow-y-auto custom-scrollbar" dir="rtl">
+                  {INTERVAL_CATEGORIES.map(cat => {
+                    const items = availableIntervals.filter(i => i.category === cat);
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={cat}>
+                        <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#2a2e39] bg-[#1e222d]/60">
+                          <span className="text-[10px] font-bold text-[#787b86] uppercase">{cat}</span>
+                        </div>
+                        {items.map(tf => (
+                          <button key={tf.value}
+                            onClick={() => { setTimeframe(tf.value); setShowIntervalMenu(false); }}
+                            className={`w-full flex items-center justify-between px-3 py-1.5 text-[12px] transition-colors ${
+                              timeframe === tf.value ? "bg-[#2962ff]/15 text-[#d1d4dc]" : "text-[#d1d4dc] hover:bg-[#1e222d]"
+                            }`}>
+                            <span className="font-medium">{tf.label}</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleFavorite(tf.value); }}
+                                className="p-0.5 rounded transition-colors hover:bg-[#2a2e39]">
+                                <Star className={`w-3.5 h-3.5 ${intervalFavorites.includes(tf.value) ? "fill-[#d4a843] text-[#d4a843]" : "text-[#434651]"}`} />
+                              </button>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
@@ -2101,7 +2197,6 @@ export default function ChartBoard() {
                 if (selectedRange === r.value) { setSelectedRange(null); return; }
                 setSelectedRange(r.value);
                 // Auto-adjust interval only when using Yahoo (no broker)
-                const usingBroker = (ibkrState.connected && ibkrState.useIbkr) || (alpacaState.connected && alpacaState.useAlpaca);
                 if (!usingBroker && !isIntervalCompatible(selectedTf?.interval, r.value)) {
                   const minInterval = bestIntervalForRange(r.value);
                   if (minInterval) {

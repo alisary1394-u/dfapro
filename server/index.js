@@ -112,13 +112,15 @@ const toYahooSymbol = (symbol, market) => {
 };
 
 const intervalMap = {
-  '1min': '1m', '5min': '5m', '15min': '15m', '30min': '30m', '60min': '60m',
+  '1min': '1m', '2min': '2m', '3min': '5m', '5min': '5m',
+  '10min': '15m', '15min': '15m', '30min': '30m', '45min': '60m',
+  '60min': '60m', '2hour': '60m', '3hour': '60m', '4hour': '60m',
   'daily': '1d', 'weekly': '1wk', 'monthly': '1mo',
 };
 
 // Yahoo Finance free-tier limits: 1m→7d, intraday→60d, EOD→unlimited
 const defaultRangeMap = {
-  '1m': '5d', '5m': '1mo', '15m': '3mo', '30m': '6mo', '60m': '2y',
+  '1m': '5d', '2m': '5d', '5m': '1mo', '15m': '3mo', '30m': '6mo', '60m': '2y',
   '1d': '5y', '1wk': 'max', '1mo': 'max',
 };
 // Valid Yahoo Finance range values
@@ -230,7 +232,7 @@ app.get('/api/market/candles', async (req, res) => {
     
     const timestamps = result.timestamp;
     const q = result.indicators.quote[0];
-    const isIntraday = ['1m', '5m', '15m', '30m', '60m'].includes(yfInterval);
+    const isIntraday = ['1m', '2m', '5m', '15m', '30m', '60m'].includes(yfInterval);
     
     const candles = timestamps.map((t, i) => {
       if (q.open[i] == null || q.close[i] == null) return null;
