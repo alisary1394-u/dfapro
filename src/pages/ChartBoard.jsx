@@ -83,6 +83,13 @@ const US_STOCKS = [
 // Candle interval (size of each candle) — independent from range
 // Categorised like TradingView; `yahoo: false` means broker-only interval
 const ALL_INTERVALS = [
+  // ثوانٍ
+  { label: "1 ثانية", shortLabel: "1ث", value: "1S", interval: "1sec", category: "ثوانٍ", yahoo: false },
+  { label: "5 ثوان", shortLabel: "5ث", value: "5S", interval: "5sec", category: "ثوانٍ", yahoo: false },
+  { label: "10 ثوان", shortLabel: "10ث", value: "10S", interval: "10sec", category: "ثوانٍ", yahoo: false },
+  { label: "15 ثانية", shortLabel: "15ث", value: "15S", interval: "15sec", category: "ثوانٍ", yahoo: false },
+  { label: "30 ثانية", shortLabel: "30ث", value: "30S", interval: "30sec", category: "ثوانٍ", yahoo: false },
+  { label: "45 ثانية", shortLabel: "45ث", value: "45S", interval: "45sec", category: "ثوانٍ", yahoo: false },
   // دقائق
   { label: "1 دقيقة", shortLabel: "1د", value: "1M", interval: "1min", category: "دقائق", yahoo: true },
   { label: "2 دقيقتين", shortLabel: "2د", value: "2M", interval: "2min", category: "دقائق", yahoo: true },
@@ -107,13 +114,14 @@ const ALL_INTERVALS = [
 const INTERVALS = ALL_INTERVALS;
 
 // Category order for the dropdown
-const INTERVAL_CATEGORIES = ["دقائق", "ساعات", "أيام", "أسابيع", "أشهر"];
+const INTERVAL_CATEGORIES = ["ثوانٍ", "دقائق", "ساعات", "أيام", "أسابيع", "أشهر"];
 
 // Default favorites (values)
 const DEFAULT_FAVORITES = ["1M", "5M", "15M", "1H", "1D"];
 
 // All intraday interval keys (format time as unix, not date string)
 const INTRADAY_INTERVALS = new Set([
+  "1sec","5sec","10sec","15sec","30sec","45sec",
   "1min","2min","3min","5min","10min","15min","30min","45min",
   "60min","2hour","3hour","4hour",
 ]);
@@ -137,6 +145,7 @@ const RANGES = [
 // Yahoo Finance max range per interval (API hard limits)
 // 1m→7d, 5m→60d, 15m→60d, 30m→60d, 60m→730d, daily/weekly/monthly→unlimited
 const MAX_RANGE_FOR_INTERVAL = {
+  '1sec': null, '5sec': null, '10sec': null, '15sec': null, '30sec': null, '45sec': null,
   '1min': ['1d', '5d'],
   '2min': ['1d', '5d'],
   '3min': null, // broker-only

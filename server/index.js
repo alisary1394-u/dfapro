@@ -112,6 +112,7 @@ const toYahooSymbol = (symbol, market) => {
 };
 
 const intervalMap = {
+  '1sec': '1m', '5sec': '1m', '10sec': '1m', '15sec': '1m', '30sec': '1m', '45sec': '1m',
   '1min': '1m', '2min': '2m', '3min': '5m', '5min': '5m',
   '10min': '15m', '15min': '15m', '30min': '30m', '45min': '60m',
   '60min': '60m', '2hour': '60m', '3hour': '60m', '4hour': '60m',
