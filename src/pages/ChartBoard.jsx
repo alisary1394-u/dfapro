@@ -80,15 +80,31 @@ const US_STOCKS = [
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
-const TIMEFRAMES = [
-  { label: "1د", value: "1M", interval: "1min", limit: 100 },
-  { label: "5د", value: "5M", interval: "5min", limit: 200 },
-  { label: "15د", value: "15M", interval: "15min", limit: 200 },
-  { label: "30د", value: "30M", interval: "30min", limit: 200 },
-  { label: "1س", value: "1H", interval: "60min", limit: 300 },
-  { label: "يوم", value: "1D", interval: "daily", limit: 365 },
-  { label: "أسبوع", value: "1W", interval: "weekly", limit: 260 },
-  { label: "شهر", value: "1MO", interval: "monthly", limit: 120 },
+// Candle interval (size of each candle) — independent from range
+const INTERVALS = [
+  { label: "1د", value: "1M", interval: "1min" },
+  { label: "5د", value: "5M", interval: "5min" },
+  { label: "15د", value: "15M", interval: "15min" },
+  { label: "30د", value: "30M", interval: "30min" },
+  { label: "1س", value: "1H", interval: "60min" },
+  { label: "يوم", value: "1D", interval: "daily" },
+  { label: "أسبوع", value: "1W", interval: "weekly" },
+  { label: "شهر", value: "1MO", interval: "monthly" },
+];
+
+// Time range (how far back to look) — fixed, always all options shown
+const RANGES = [
+  { label: "1ي", value: "1d" },
+  { label: "5ي", value: "5d" },
+  { label: "شهر", value: "1mo" },
+  { label: "3ش", value: "3mo" },
+  { label: "6ش", value: "6mo" },
+  { label: "سنة", value: "1y" },
+  { label: "2س", value: "2y" },
+  { label: "5س", value: "5y" },
+  { label: "10س", value: "10y" },
+  { label: "YTD", value: "ytd" },
+  { label: "كل", value: "max" },
 ];
 
 const CHART_TYPES = [
@@ -98,35 +114,6 @@ const CHART_TYPES = [
   { value: "area", label: "مساحة" },
   { value: "bar", label: "OHLC" },
 ];
-
-// Range options per timeframe category
-const RANGE_OPTIONS = {
-  intraday: [
-    { label: "1د", value: "1d" },
-    { label: "5د", value: "5d" },
-    { label: "شهر", value: "1mo" },
-    { label: "3 أشهر", value: "3mo" },
-  ],
-  daily: [
-    { label: "3 أشهر", value: "3mo" },
-    { label: "6 أشهر", value: "6mo" },
-    { label: "سنة", value: "1y" },
-    { label: "2 سنة", value: "2y" },
-    { label: "5 سنوات", value: "5y" },
-    { label: "كل", value: "max" },
-  ],
-  weekly: [
-    { label: "سنة", value: "1y" },
-    { label: "5 سنوات", value: "5y" },
-    { label: "10 سنوات", value: "10y" },
-    { label: "كل", value: "max" },
-  ],
-  monthly: [
-    { label: "5 سنوات", value: "5y" },
-    { label: "10 سنوات", value: "10y" },
-    { label: "كل", value: "max" },
-  ],
-};
 
 const C = {
   bg: "#0c0e14", card: "#131722", surface: "#1e222d", border: "#2a2e39",
@@ -1191,7 +1178,7 @@ export default function ChartBoard() {
   const activeToolRef = useRef(activeTool);
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
 
-  const selectedTf = useMemo(() => TIMEFRAMES.find(t => t.value === timeframe) || TIMEFRAMES[5], [timeframe]);
+  const selectedTf = useMemo(() => INTERVALS.find(t => t.value === timeframe) || INTERVALS[5], [timeframe]);
 
   // ── Init IBKR from saved config ──
   useEffect(() => {
@@ -2059,10 +2046,10 @@ export default function ChartBoard() {
 
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
-          {/* Timeframes */}
+          {/* Intervals (candle size) */}
           <div className="flex items-center gap-0 shrink-0">
-            {TIMEFRAMES.map(tf => (
-              <button key={tf.value} onClick={() => { setTimeframe(tf.value); setSelectedRange(null); }}
+            {INTERVALS.map(tf => (
+              <button key={tf.value} onClick={() => setTimeframe(tf.value)}
                 className={`px-1.5 py-0.5 text-[11px] font-semibold transition-all rounded ${
                   timeframe === tf.value ? "text-[#d1d4dc] bg-[#2962ff]/20" : "text-[#787b86] hover:text-[#d1d4dc]"
                 }`}>
@@ -2073,26 +2060,17 @@ export default function ChartBoard() {
 
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
-          {/* Range selector */}
-          {(() => {
-            const isIntraday = ["1min","5min","15min","30min","60min"].includes(selectedTf?.interval);
-            const isWeekly = selectedTf?.interval === "weekly";
-            const isMonthly = selectedTf?.interval === "monthly";
-            const rangeKey = isIntraday ? "intraday" : isWeekly ? "weekly" : isMonthly ? "monthly" : "daily";
-            const ranges = RANGE_OPTIONS[rangeKey];
-            return (
-              <div className="flex items-center gap-0 shrink-0">
-                {ranges.map(r => (
-                  <button key={r.value} onClick={() => setSelectedRange(selectedRange === r.value ? null : r.value)}
-                    className={`px-1.5 py-0.5 text-[10px] font-semibold transition-all rounded ${
-                      selectedRange === r.value ? "text-[#d4a843] bg-[#d4a843]/15" : "text-[#787b86] hover:text-[#d1d4dc]"
-                    }`}>
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            );
-          })()}
+          {/* Range (time period) — fixed, always all options */}
+          <div className="flex items-center gap-0 shrink-0">
+            {RANGES.map(r => (
+              <button key={r.value} onClick={() => setSelectedRange(selectedRange === r.value ? null : r.value)}
+                className={`px-1.5 py-0.5 text-[10px] font-semibold transition-all rounded ${
+                  selectedRange === r.value ? "text-[#d4a843] bg-[#d4a843]/15" : "text-[#787b86] hover:text-[#d1d4dc]"
+                }`}>
+                {r.label}
+              </button>
+            ))}
+          </div>
 
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
