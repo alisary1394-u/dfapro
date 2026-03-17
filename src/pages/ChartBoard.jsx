@@ -1195,6 +1195,7 @@ export default function ChartBoard() {
   const [drawings, setDrawings] = useState([]);
   const [showChartTypeMenu, setShowChartTypeMenu] = useState(false);
   const [showIntervalMenu, setShowIntervalMenu] = useState(false);
+  const intervalBtnRef = useRef(null);
   const [intervalFavorites, setIntervalFavorites] = useState(() => {
     try { const s = localStorage.getItem('chartboard_interval_favs'); return s ? JSON.parse(s) : DEFAULT_FAVORITES; }
     catch { return DEFAULT_FAVORITES; }
@@ -2136,7 +2137,7 @@ export default function ChartBoard() {
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
 
           {/* Intervals: Favorites row + dropdown trigger */}
-          <div className="flex items-center gap-0 shrink-0 relative">
+          <div className="flex items-center gap-0 shrink-0">
             {/* Favorite interval quick buttons */}
             {ALL_INTERVALS.filter(t => intervalFavorites.includes(t.value)).map(tf => (
               <button key={tf.value} onClick={() => setTimeframe(tf.value)}
@@ -2147,45 +2148,51 @@ export default function ChartBoard() {
               </button>
             ))}
             {/* Dropdown trigger */}
-            <button onClick={() => setShowIntervalMenu(v => !v)}
+            <button ref={intervalBtnRef} onClick={() => setShowIntervalMenu(v => !v)}
               className={`px-1 py-0.5 text-[11px] font-semibold transition-all rounded flex items-center gap-0.5 ${showIntervalMenu ? "text-[#d1d4dc] bg-[#2962ff]/20" : "text-[#787b86] hover:text-[#d1d4dc]"}`}>
               <ChevronDown className="w-3 h-3" />
             </button>
-            {/* ── Interval Dropdown Menu ── */}
-            {showIntervalMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowIntervalMenu(false)} />
-                <div className="absolute top-full left-0 mt-1 bg-[#131722] border border-[#2a2e39] rounded-lg shadow-2xl z-50 w-56 max-h-[70vh] overflow-y-auto custom-scrollbar" dir="rtl">
-                  {INTERVAL_CATEGORIES.map(cat => {
-                    const items = availableIntervals.filter(i => i.category === cat);
-                    if (items.length === 0) return null;
-                    return (
-                      <div key={cat}>
-                        <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#2a2e39] bg-[#1e222d]/60">
-                          <span className="text-[10px] font-bold text-[#787b86] uppercase">{cat}</span>
+            {/* ── Interval Dropdown Menu (fixed to escape overflow) ── */}
+            {showIntervalMenu && (() => {
+              const rect = intervalBtnRef.current?.getBoundingClientRect();
+              const top = rect ? rect.bottom + 4 : 60;
+              const left = rect ? rect.left : 100;
+              return (
+                <>
+                  <div className="fixed inset-0 z-[9998]" onClick={() => setShowIntervalMenu(false)} />
+                  <div className="fixed bg-[#131722] border border-[#2a2e39] rounded-lg shadow-2xl z-[9999] w-56 max-h-[70vh] overflow-y-auto custom-scrollbar"
+                    style={{ top, left }} dir="rtl">
+                    {INTERVAL_CATEGORIES.map(cat => {
+                      const items = availableIntervals.filter(i => i.category === cat);
+                      if (items.length === 0) return null;
+                      return (
+                        <div key={cat}>
+                          <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#2a2e39] bg-[#1e222d]/60">
+                            <span className="text-[10px] font-bold text-[#787b86] uppercase">{cat}</span>
+                          </div>
+                          {items.map(tf => (
+                            <button key={tf.value}
+                              onClick={() => { setTimeframe(tf.value); setShowIntervalMenu(false); }}
+                              className={`w-full flex items-center justify-between px-3 py-1.5 text-[12px] transition-colors ${
+                                timeframe === tf.value ? "bg-[#2962ff]/15 text-[#d1d4dc]" : "text-[#d1d4dc] hover:bg-[#1e222d]"
+                              }`}>
+                              <span className="font-medium">{tf.label}</span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleFavorite(tf.value); }}
+                                  className="p-0.5 rounded transition-colors hover:bg-[#2a2e39]">
+                                  <Star className={`w-3.5 h-3.5 ${intervalFavorites.includes(tf.value) ? "fill-[#d4a843] text-[#d4a843]" : "text-[#434651]"}`} />
+                                </button>
+                              </div>
+                            </button>
+                          ))}
                         </div>
-                        {items.map(tf => (
-                          <button key={tf.value}
-                            onClick={() => { setTimeframe(tf.value); setShowIntervalMenu(false); }}
-                            className={`w-full flex items-center justify-between px-3 py-1.5 text-[12px] transition-colors ${
-                              timeframe === tf.value ? "bg-[#2962ff]/15 text-[#d1d4dc]" : "text-[#d1d4dc] hover:bg-[#1e222d]"
-                            }`}>
-                            <span className="font-medium">{tf.label}</span>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); toggleFavorite(tf.value); }}
-                                className="p-0.5 rounded transition-colors hover:bg-[#2a2e39]">
-                                <Star className={`w-3.5 h-3.5 ${intervalFavorites.includes(tf.value) ? "fill-[#d4a843] text-[#d4a843]" : "text-[#434651]"}`} />
-                              </button>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
