@@ -1248,6 +1248,9 @@ export default function ChartBoard() {
   const mainContainerRef = useRef(null);
   const mainChartRef = useRef(null);
   const mainSeriesRef = useRef(null);
+  const volumeSeriesRef = useRef(null);
+  const chartBuiltRef = useRef(false);
+  const chartTypeRef = useRef(chartType);
   const rsiContainerRef = useRef(null);
   const rsiChartRef = useRef(null);
   const macdContainerRef = useRef(null);
@@ -1260,6 +1263,7 @@ export default function ChartBoard() {
   const pendingClickRef = useRef(null);
   const activeToolRef = useRef(activeTool);
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
+  useEffect(() => { chartTypeRef.current = chartType; }, [chartType]);
 
   const selectedTf = useMemo(() => INTERVALS.find(t => t.value === timeframe) || INTERVALS.find(t => t.value === '1D'), [timeframe]);
 
@@ -1441,6 +1445,8 @@ export default function ChartBoard() {
   // ── Fetch Candles (IBKR / Alpaca / Yahoo) ──
   useEffect(() => {
     if (!selectedStock) return;
+    chartBuiltRef.current = false; // Force full chart build on first fetch
+    liveBarRef.current = { time: 0, open: 0, high: 0, low: 0, close: 0 };
     fetchCandles();
     const useRealtime = ibkrState.useIbkr || alpacaState.useAlpaca;
     const isIntra = isIntradayInterval(selectedTf?.interval);
@@ -1519,8 +1525,33 @@ export default function ChartBoard() {
     return () => sub.close();
   }, [selectedStock, alpacaState.connected, alpacaState.useAlpaca, chartType, selectedTf]);
 
+  // Smart update: if chart is already built, update series in-place (no flicker).
+  // Falls back to full rebuild via setCandles() on first load or error.
+  const smartSetCandles = (processed) => {
+    if (chartBuiltRef.current && mainSeriesRef.current) {
+      try {
+        const ct = chartTypeRef.current;
+        let displayData = processed;
+        if (ct === 'heikinashi') displayData = toHeikinAshi(processed);
+        if (ct === 'line' || ct === 'area') {
+          mainSeriesRef.current.setData(displayData.map(c => ({ time: c.time, value: c.close })));
+        } else {
+          mainSeriesRef.current.setData(displayData);
+        }
+        if (volumeSeriesRef.current) {
+          volumeSeriesRef.current.setData(processed.map(c => ({
+            time: c.time, value: c.volume || 0,
+            color: c.close >= c.open ? 'rgba(38,166,154,0.25)' : 'rgba(239,83,80,0.25)',
+          })));
+        }
+        return; // success — no chart rebuild
+      } catch { /* fall through to full rebuild */ }
+    }
+    setCandles(processed);
+  };
+
   const fetchCandles = async () => {
-    setLoading(true);
+    if (!chartBuiltRef.current) setLoading(true);
 
     // ── IBKR candles ──
     if (ibkrState.connected && ibkrState.useIbkr) {
@@ -1545,7 +1576,7 @@ export default function ChartBoard() {
             .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
             .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
           if (processed.length > 0) {
-            setCandles(processed);
+            smartSetCandles(processed);
             setCurrentBar(processed[processed.length - 1]);
           }
         }
@@ -1578,7 +1609,7 @@ export default function ChartBoard() {
             .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
             .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
           if (processed.length > 0) {
-            setCandles(processed);
+            smartSetCandles(processed);
             setCurrentBar(processed[processed.length - 1]);
           }
         }
@@ -1614,7 +1645,7 @@ export default function ChartBoard() {
         .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
 
       if (processed.length > 0) {
-        setCandles(processed);
+        smartSetCandles(processed);
         setCurrentBar(processed[processed.length - 1]);
       }
     } catch (err) {
@@ -1709,6 +1740,9 @@ export default function ChartBoard() {
           time: c.time, value: c.volume || 0,
           color: c.close >= c.open ? "rgba(38,166,154,0.25)" : "rgba(239,83,80,0.25)",
         })));
+        volumeSeriesRef.current = volSeries;
+      } else {
+        volumeSeriesRef.current = null;
       }
 
       // Overlays
@@ -2011,11 +2045,16 @@ export default function ChartBoard() {
       if (stochChartRef.current) { try { stochChartRef.current.remove(); } catch (_) {} stochChartRef.current = null; }
     }
 
+    chartBuiltRef.current = true;
+
     return () => {
+      chartBuiltRef.current = false;
       cleanups.forEach(fn => fn());
       [mainChartRef, rsiChartRef, macdChartRef, stochChartRef].forEach(ref => {
         if (ref.current) { try { ref.current.remove(); } catch (_) {} ref.current = null; }
       });
+      mainSeriesRef.current = null;
+      volumeSeriesRef.current = null;
     };
   }, [candles, chartType, overlays, subs]);
 

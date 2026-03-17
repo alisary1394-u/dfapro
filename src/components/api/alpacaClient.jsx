@@ -131,7 +131,9 @@ export const subscribeAlpacaQuotes = (symbol, onTick) => {
     } catch { /* ignore */ }
   };
 
-  es.onerror = () => {};
+  es.onerror = (err) => {
+    console.warn('[Alpaca SSE] Stream error for', symbol, '— readyState:', es.readyState);
+  };
 
   return { close: () => es.close() };
 };
