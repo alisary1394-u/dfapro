@@ -1552,8 +1552,8 @@ app.get('/api/alpaca/snapshot/:symbol', async (req, res) => {
 // Alpaca Historical Bars
 app.get('/api/alpaca/bars/:symbol', async (req, res) => {
   try {
-    const { interval = 'daily' } = req.query;
-    const data = await alpacaApi.getBars(req.params.symbol, interval);
+    const { interval = 'daily', range = '' } = req.query;
+    const data = await alpacaApi.getBars(req.params.symbol, interval, range);
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: 'Historical data failed', details: err.message });

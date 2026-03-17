@@ -86,9 +86,10 @@ export const getAlpacaSnapshot = async (symbol) => {
 };
 
 /** Get historical bars */
-export const getAlpacaBars = async (symbol, interval = 'daily') => {
-  const qs = new URLSearchParams({ interval }).toString();
-  return alpacaFetch(`/bars/${encodeURIComponent(symbol)}?${qs}`, { timeout: 20000 });
+export const getAlpacaBars = async (symbol, interval = 'daily', range = '') => {
+  const params = new URLSearchParams({ interval });
+  if (range) params.set('range', range);
+  return alpacaFetch(`/bars/${encodeURIComponent(symbol)}?${params.toString()}`, { timeout: 20000 });
 };
 
 /** Search assets */

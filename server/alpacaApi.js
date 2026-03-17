@@ -341,14 +341,43 @@ const TF_MAP = {
   'monthly': { timeframe: '1Month', limit: 120 },
 };
 
-export async function getBars(symbol, interval = 'daily') {
+// Convert range string (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max) to a start date
+function rangeToStartDate(range) {
+  const now = new Date();
+  switch (range) {
+    case '1d': now.setDate(now.getDate() - 1); break;
+    case '5d': now.setDate(now.getDate() - 5); break;
+    case '1mo': now.setMonth(now.getMonth() - 1); break;
+    case '3mo': now.setMonth(now.getMonth() - 3); break;
+    case '6mo': now.setMonth(now.getMonth() - 6); break;
+    case '1y': now.setFullYear(now.getFullYear() - 1); break;
+    case '2y': now.setFullYear(now.getFullYear() - 2); break;
+    case '5y': now.setFullYear(now.getFullYear() - 5); break;
+    case '10y': now.setFullYear(now.getFullYear() - 10); break;
+    case 'ytd': now.setMonth(0); now.setDate(1); break;
+    case 'max': now.setFullYear(now.getFullYear() - 20); break;
+    default: return null;
+  }
+  return now.toISOString();
+}
+
+// Default range per interval if none specified
+const DEFAULT_RANGE = {
+  '1min': '1d', '5min': '5d', '15min': '1mo', '30min': '1mo',
+  '60min': '3mo', 'daily': '5y', 'weekly': 'max', 'monthly': 'max',
+};
+
+export async function getBars(symbol, interval = 'daily', range = '') {
   const tf = TF_MAP[interval] || TF_MAP.daily;
+  const effectiveRange = range || DEFAULT_RANGE[interval] || '5y';
+  const start = rangeToStartDate(effectiveRange);
   const params = new URLSearchParams({
     timeframe: tf.timeframe,
     limit: String(tf.limit),
     adjustment: 'split',
     feed: 'iex',
   });
+  if (start) params.set('start', start);
   const data = await alpacaFetch(
     `${DATA_URL}/v2/stocks/${encodeURIComponent(symbol)}/bars?${params}`,
   );

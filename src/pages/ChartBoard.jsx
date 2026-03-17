@@ -1460,7 +1460,7 @@ export default function ChartBoard() {
     // ── Alpaca candles ──
     if (alpacaState.connected && alpacaState.useAlpaca) {
       try {
-        const bars = await getAlpacaBars(selectedStock.symbol, selectedTf.interval);
+        const bars = await getAlpacaBars(selectedStock.symbol, selectedTf.interval, selectedRange || '');
         const alpacaCandles = parseAlpacaBars(bars);
 
         if (alpacaCandles.length > 0) {
