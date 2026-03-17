@@ -334,7 +334,7 @@ export default function Layout({ children, currentPageName }) {
 
       {/* ── Main Content ── */}
       <main className={`lg:mr-[17rem] min-h-screen pt-14 lg:pt-12 ${['StockAnalysis', 'OptionsAnalysis', 'Compare', 'StockNews'].includes(currentPageName) ? 'lg:ml-48' : 'lg:ml-0'}`}>
-        <div className="p-4 md:p-5 lg:p-7 animate-fade-in-up">
+        <div className={`${currentPageName === 'ChartBoard' ? '' : 'p-4 md:p-5 lg:p-7'} animate-fade-in-up`}>
           {children}
         </div>
       </main>
