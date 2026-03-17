@@ -608,21 +608,94 @@ function AiPanel({ symbol, market, candles, onClose }) {
   const analyze = async () => {
     setLoading(true);
     setResult(null);
-    const last30 = candles.slice(-30);
-    const prices = last30.map(c => c.close);
-    const high = Math.max(...last30.map(c => c.high));
-    const low = Math.min(...last30.map(c => c.low));
-    const latest = candles[candles.length - 1];
-    const rsiData = calcRSI(candles, 14);
-    const rsiValue = rsiData.length > 0 ? rsiData[rsiData.length - 1].value : null;
-    const macdResult = calcMACD(candles);
-    const lastMacd = macdResult.macdLine.length > 0 ? macdResult.macdLine[macdResult.macdLine.length - 1].value : null;
-
-    try {
+    if (!candles || candles.length < 14) {
       setResult({ _unavailable: true });
-    } catch (err) {
-      console.error(err);
+      setLoading(false);
+      return;
     }
+
+    const last30 = candles.slice(-30);
+    const latest = candles[candles.length - 1];
+
+    // Calculate indicators
+    const rsiData = calcRSI(candles, 14);
+    const rsiValue = rsiData.length > 0 ? rsiData[rsiData.length - 1].value : 50;
+    const macdResult = calcMACD(candles);
+    const lastMacd = macdResult.macdLine.length > 0 ? macdResult.macdLine[macdResult.macdLine.length - 1].value : 0;
+    const lastSignal = macdResult.signalLine.length > 0 ? macdResult.signalLine[macdResult.signalLine.length - 1].value : 0;
+    const lastHist = macdResult.histogram.length > 0 ? macdResult.histogram[macdResult.histogram.length - 1].value : 0;
+    const sma20 = calcSMA(candles, 20);
+    const sma50 = calcSMA(candles, Math.min(50, candles.length));
+    const lastSma20 = sma20.length > 0 ? sma20[sma20.length - 1].value : latest.close;
+    const lastSma50 = sma50.length > 0 ? sma50[sma50.length - 1].value : latest.close;
+
+    // Trend detection
+    const aboveSma20 = latest.close > lastSma20;
+    const aboveSma50 = latest.close > lastSma50;
+    const sma20Above50 = lastSma20 > lastSma50;
+
+    let trend, trend_reason;
+    if (aboveSma20 && aboveSma50 && sma20Above50) {
+      trend = "صاعد قوي ↑↑";
+      trend_reason = "السعر فوق SMA20 و SMA50 والمتوسط القصير فوق الطويل";
+    } else if (aboveSma20 && aboveSma50) {
+      trend = "صاعد ↑";
+      trend_reason = "السعر فوق المتوسطات المتحركة الرئيسية";
+    } else if (!aboveSma20 && !aboveSma50 && !sma20Above50) {
+      trend = "هابط قوي ↓↓";
+      trend_reason = "السعر تحت SMA20 و SMA50 والمتوسط القصير تحت الطويل";
+    } else if (!aboveSma20 && !aboveSma50) {
+      trend = "هابط ↓";
+      trend_reason = "السعر تحت المتوسطات المتحركة";
+    } else {
+      trend = "محايد ↔";
+      trend_reason = "إشارات مختلطة بين المتوسطات المتحركة";
+    }
+
+    // Support & Resistance
+    const support = Math.min(...last30.map(c => c.low));
+    const resistance = Math.max(...last30.map(c => c.high));
+
+    // Scoring system
+    let score = 0;
+    if (rsiValue < 30) score += 2;
+    else if (rsiValue > 70) score -= 2;
+    else if (rsiValue < 45) score += 0.5;
+    else if (rsiValue > 55) score -= 0.5;
+    if (lastMacd > lastSignal) score += 1;
+    else score -= 1;
+    if (lastHist > 0) score += 0.5;
+    else score -= 0.5;
+    if (aboveSma20) score += 1;
+    else score -= 1;
+    if (aboveSma50) score += 1;
+    else score -= 1;
+    // Volume analysis
+    const vols = candles.slice(-10).map(c => c.volume || 0);
+    const avgVol = vols.reduce((a, b) => a + b, 0) / (vols.length || 1);
+    const latVol = latest.volume || 0;
+    if (latVol > avgVol * 1.5 && latest.close > latest.open) score += 1;
+    else if (latVol > avgVol * 1.5 && latest.close < latest.open) score -= 1;
+
+    let recommendation, momentum, risk_level;
+    if (score >= 3) { recommendation = "شراء قوي"; momentum = "إيجابي قوي"; risk_level = "منخفض"; }
+    else if (score >= 1) { recommendation = "شراء"; momentum = "إيجابي"; risk_level = "متوسط"; }
+    else if (score <= -3) { recommendation = "بيع قوي"; momentum = "سلبي قوي"; risk_level = "منخفض"; }
+    else if (score <= -1) { recommendation = "بيع"; momentum = "سلبي"; risk_level = "متوسط"; }
+    else { recommendation = "انتظار"; momentum = "محايد"; risk_level = "عالي"; }
+
+    const entry_point = score > 0 ? support * 1.005 : null;
+    const exit_point = score > 0 ? resistance * 0.995 : null;
+    const confidence = Math.min(92, Math.max(25, 50 + Math.abs(score) * 9));
+
+    let note;
+    if (rsiValue > 70) note = "⚠️ RSI في منطقة ذروة الشراء — احذر من التصحيح";
+    else if (rsiValue < 30) note = "💡 RSI في منطقة ذروة البيع — فرصة شراء محتملة";
+    else if (lastMacd > lastSignal && lastHist > 0) note = "📈 تقاطع MACD إيجابي يدعم الاتجاه الصاعد";
+    else if (lastMacd < lastSignal && lastHist < 0) note = "📉 تقاطع MACD سلبي يدعم الاتجاه الهابط";
+    else note = "📊 راقب مستويات الدعم والمقاومة القريبة";
+
+    setResult({ recommendation, trend, trend_reason, support, resistance, entry_point, exit_point, momentum, risk_level, confidence, note });
     setLoading(false);
   };
 
@@ -1112,6 +1185,12 @@ export default function ChartBoard() {
   const stochContainerRef = useRef(null);
   const stochChartRef = useRef(null);
 
+  // Drawing tool refs
+  const drawnPriceLinesRef = useRef([]);
+  const pendingClickRef = useRef(null);
+  const activeToolRef = useRef(activeTool);
+  useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
+
   const selectedTf = useMemo(() => TIMEFRAMES.find(t => t.value === timeframe) || TIMEFRAMES[5], [timeframe]);
 
   // ── Init IBKR from saved config ──
@@ -1461,6 +1540,14 @@ export default function ChartBoard() {
       const chart = createChart(mainContainer, {
         ...chartOpts(mainContainer),
         height: mainContainer.clientHeight,
+        watermark: {
+          visible: true,
+          text: selectedStock?.symbol || '',
+          fontSize: 64,
+          color: 'rgba(120,123,134,0.06)',
+          fontFamily: "'Tajawal', sans-serif",
+          fontStyle: 'bold',
+        },
       });
 
       let displayData = candles;
@@ -1544,6 +1631,148 @@ export default function ChartBoard() {
           if (data) setCurrentBar({ time: param.time, ...data });
         }
       });
+
+      // Drawing tools - chart click subscription
+      chart.subscribeClick(param => {
+        if (!param.point) return;
+        const tool = activeToolRef.current;
+        if (!tool || tool === 'cursor' || tool === 'crosshair') return;
+
+        const price = mainSeries.coordinateToPrice(param.point.y);
+        if (price == null || isNaN(price)) return;
+
+        if (tool === 'horizontal') {
+          setDrawings(prev => [...prev, { type: 'horizontal', price, color: '#2962ff', id: Date.now() }]);
+          setActiveTool('cursor');
+        } else if (tool === 'ray') {
+          setDrawings(prev => [...prev, { type: 'horizontal', price, color: '#ff9800', id: Date.now() }]);
+          setActiveTool('cursor');
+        } else if (tool === 'fib') {
+          if (!pendingClickRef.current) {
+            pendingClickRef.current = { price };
+            // Visual feedback: temporary price line for first click
+            const tmpLine = mainSeries.createPriceLine({
+              price, color: '#d4a843', lineWidth: 1, lineStyle: LineStyle.Dotted,
+              axisLabelVisible: true, title: 'Fib start',
+            });
+            pendingClickRef.current.tmpLine = tmpLine;
+            pendingClickRef.current.series = mainSeries;
+          } else {
+            const start = pendingClickRef.current;
+            // Remove temp line
+            if (start.tmpLine && start.series) {
+              try { start.series.removePriceLine(start.tmpLine); } catch {}
+            }
+            setDrawings(prev => [...prev, {
+              type: 'fib',
+              high: Math.max(start.price, price),
+              low: Math.min(start.price, price),
+              id: Date.now(),
+            }]);
+            pendingClickRef.current = null;
+            setActiveTool('cursor');
+          }
+        } else if (tool === 'trendline') {
+          if (!pendingClickRef.current) {
+            pendingClickRef.current = { price, time: param.time };
+          } else {
+            const start = pendingClickRef.current;
+            // Use markers for trendline endpoints
+            const markers = [
+              { time: start.time, position: 'inBar', color: '#2962ff', shape: 'circle', text: '' },
+              { time: param.time, position: 'inBar', color: '#2962ff', shape: 'circle', text: '' },
+            ].sort((a, b) => (a.time > b.time ? 1 : -1));
+            setDrawings(prev => [...prev, { type: 'trendline', markers, id: Date.now() }]);
+            pendingClickRef.current = null;
+            setActiveTool('cursor');
+          }
+        } else if (tool === 'measure') {
+          if (!pendingClickRef.current) {
+            pendingClickRef.current = { price, time: param.time };
+          } else {
+            const start = pendingClickRef.current;
+            const priceDiff = price - start.price;
+            const pctDiff = ((priceDiff / start.price) * 100).toFixed(2);
+            const label = `${priceDiff >= 0 ? '+' : ''}${priceDiff.toFixed(2)} (${pctDiff}%)`;
+            setDrawings(prev => [...prev, {
+              type: 'horizontal',
+              price: start.price,
+              color: priceDiff >= 0 ? '#26a69a' : '#ef5350',
+              label,
+              id: Date.now(),
+            }, {
+              type: 'horizontal',
+              price,
+              color: priceDiff >= 0 ? '#26a69a' : '#ef5350',
+              label: `→ ${price.toFixed(2)}`,
+              id: Date.now() + 1,
+            }]);
+            pendingClickRef.current = null;
+            setActiveTool('cursor');
+          }
+        } else if (tool === 'text' || tool === 'note') {
+          const text = tool === 'text' ? prompt('أدخل النص:') : prompt('أدخل الملاحظة:');
+          if (text) {
+            setDrawings(prev => [...prev, {
+              type: 'marker',
+              time: param.time,
+              price,
+              text,
+              shape: tool === 'note' ? 'square' : 'arrowUp',
+              color: '#d4a843',
+              id: Date.now(),
+            }]);
+          }
+          setActiveTool('cursor');
+        }
+      });
+
+      // Apply saved drawings to chart
+      drawnPriceLinesRef.current = [];
+      const allMarkers = [];
+      drawings.forEach(d => {
+        if (d.type === 'horizontal') {
+          const pl = mainSeries.createPriceLine({
+            price: d.price,
+            color: d.color || '#2962ff',
+            lineWidth: 1,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: d.label || `${d.price.toFixed(2)}`,
+          });
+          drawnPriceLinesRef.current.push(pl);
+        } else if (d.type === 'fib') {
+          const diff = d.high - d.low;
+          const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+          const colors = ['#787b86', '#ef5350', '#ff9800', '#2962ff', '#26a69a', '#9c27b0', '#787b86'];
+          levels.forEach((level, i) => {
+            const levelPrice = d.high - diff * level;
+            const pl = mainSeries.createPriceLine({
+              price: levelPrice,
+              color: colors[i],
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: `${(level * 100).toFixed(1)}%`,
+            });
+            drawnPriceLinesRef.current.push(pl);
+          });
+        } else if (d.type === 'trendline' && d.markers) {
+          allMarkers.push(...d.markers);
+        } else if (d.type === 'marker') {
+          allMarkers.push({
+            time: d.time,
+            position: 'aboveBar',
+            color: d.color || '#d4a843',
+            shape: d.shape || 'arrowUp',
+            text: d.text || '',
+          });
+        }
+      });
+      if (allMarkers.length > 0) {
+        const sorted = allMarkers.sort((a, b) => (a.time > b.time ? 1 : -1));
+        mainSeries.setMarkers(sorted);
+      }
 
       chart.timeScale().fitContent();
       mainChartRef.current = chart;
@@ -1656,7 +1885,7 @@ export default function ChartBoard() {
         if (ref.current) { try { ref.current.remove(); } catch (_) {} ref.current = null; }
       });
     };
-  }, [candles, chartType, overlays, subs]);
+  }, [candles, chartType, overlays, subs, drawings]);
 
   // ── Handlers ──
   const handleSelect = (stock) => {
@@ -1664,6 +1893,8 @@ export default function ChartBoard() {
     setCandles([]);
     setShowAI(false);
     setCurrentBar(null);
+    setDrawings([]);
+    pendingClickRef.current = null;
   };
 
   const handleSelectMarket = (m) => {
@@ -1671,6 +1902,40 @@ export default function ChartBoard() {
     if (m === "saudi") handleSelect({ symbol: "2222", name: "أرامكو" });
     else handleSelect({ symbol: "AAPL", name: "Apple" });
   };
+
+  // ── Screenshot ──
+  const takeScreenshot = () => {
+    const chart = mainChartRef.current;
+    if (!chart) return;
+    try {
+      const canvas = chart.takeScreenshot();
+      const link = document.createElement('a');
+      link.download = `${selectedStock?.symbol || 'chart'}_${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch {}
+  };
+
+  // ── Keyboard Shortcuts ──
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      const key = e.key.toLowerCase();
+
+      if (e.ctrlKey && key === 'z') { e.preventDefault(); setDrawings(prev => prev.slice(0, -1)); }
+      else if (key === 'escape') { setActiveTool('cursor'); setShowChartTypeMenu(false); setShowIndicators(false); setShowAI(false); setShowIbkr(false); setShowAlpaca(false); pendingClickRef.current = null; }
+      else if (key === 'h') setActiveTool('horizontal');
+      else if (key === 'f') setActiveTool('fib');
+      else if (key === 't') setActiveTool('trendline');
+      else if (key === 'm') setActiveTool('measure');
+      else if (key === 'v') setActiveTool('cursor');
+      else if (key === '+' || key === '=') setActiveTool('crosshair');
+      else if (key === 'delete' || key === 'backspace') { if (e.ctrlKey) setDrawings([]); }
+      else if (key === 's' && e.ctrlKey) { e.preventDefault(); takeScreenshot(); }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
 
   const change = quote?.change_percent;
   const isUp = change >= 0;
@@ -1770,6 +2035,8 @@ export default function ChartBoard() {
               <ChevronDown className="w-3 h-3" />
             </button>
             {showChartTypeMenu && (
+              <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowChartTypeMenu(false)} />
               <div className="absolute top-full left-0 mt-1 bg-[#131722] border border-[#2a2e39] rounded-lg shadow-2xl z-50 w-40 overflow-hidden">
                 {CHART_TYPES.map(t => (
                   <button key={t.value} onClick={() => { setChartType(t.value); setShowChartTypeMenu(false); }}
@@ -1780,6 +2047,7 @@ export default function ChartBoard() {
                   </button>
                 ))}
               </div>
+              </>
             )}
           </div>
 
@@ -1795,7 +2063,10 @@ export default function ChartBoard() {
               <span>المؤشرات</span>
               {activeCount > 0 && <span className="bg-[#2962ff] text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] font-black">{activeCount}</span>}
             </button>
-            {showIndicators && <IndicatorMenu overlays={overlays} setOverlays={setOverlays} subs={subs} setSubs={setSubs} onClose={() => setShowIndicators(false)} />}
+            {showIndicators && <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowIndicators(false)} />
+              <IndicatorMenu overlays={overlays} setOverlays={setOverlays} subs={subs} setSubs={setSubs} onClose={() => setShowIndicators(false)} />
+            </>}
           </div>
 
           <div className="flex-1" />
@@ -1848,6 +2119,12 @@ export default function ChartBoard() {
             {alpacaState.useAlpaca && <span className="w-1.5 h-1.5 rounded-full bg-[#ffeb3b] animate-pulse" />}
           </button>
 
+          {/* Screenshot */}
+          <button onClick={takeScreenshot} title="لقطة شاشة (Ctrl+S)"
+            className="p-1.5 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all">
+            <Camera className="w-3.5 h-3.5" />
+          </button>
+
           {/* Fullscreen */}
           <button onClick={toggleFullscreen}
             className="p-1.5 rounded text-[#787b86] hover:text-[#d1d4dc] hover:bg-[#1e222d] transition-all">
@@ -1896,6 +2173,20 @@ export default function ChartBoard() {
             <AlpacaConnectionPanel alpacaState={alpacaState} setAlpacaState={setAlpacaState} onClose={() => setShowAlpaca(false)} />
           )}
 
+          {/* Active drawing tool indicator */}
+          {activeTool !== 'cursor' && activeTool !== 'crosshair' && (
+            <div className="absolute top-1 right-3 z-10 flex items-center gap-2 bg-[#2962ff]/15 border border-[#2962ff]/30 rounded-lg px-3 py-1.5 backdrop-blur-sm">
+              <Crosshair className="w-3.5 h-3.5 text-[#2962ff]" />
+              <span className="text-[11px] font-bold text-[#2962ff]">
+                {DRAWING_TOOLS.find(t => t.id === activeTool)?.label || activeTool}
+                {pendingClickRef.current ? ' — انقر للتحديد' : ' — انقر على الرسم'}
+              </span>
+              <button onClick={() => { setActiveTool('cursor'); pendingClickRef.current = null; }} className="text-[#787b86] hover:text-[#d1d4dc]">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
           {/* OHLCV */}
           {currentBar && (
             <div className="absolute top-1 left-12 z-10 flex items-center gap-3 text-[11px]" dir="ltr">
@@ -1909,7 +2200,7 @@ export default function ChartBoard() {
 
           {selectedStock ? (
             <>
-              <div ref={mainContainerRef} className="flex-1 w-full min-h-0" />
+              <div ref={mainContainerRef} className="flex-1 w-full min-h-0" style={{ cursor: activeTool !== 'cursor' && activeTool !== 'crosshair' ? 'crosshair' : 'default' }} />
 
               {subs.rsi.enabled && (
                 <div className="border-t border-[#2a2e39] relative">
@@ -1950,6 +2241,7 @@ export default function ChartBoard() {
             {subs.rsi.enabled && <span className="text-[#7b2ff7]">◆ RSI</span>}
             {subs.macd.enabled && <span className="text-[#2962ff]">◆ MACD</span>}
             {subs.stochastic.enabled && <span className="text-[#e040fb]">◆ Stoch</span>}
+            {drawings.length > 0 && <span className="text-[#d4a843]">✎ {drawings.length} رسم</span>}
           </div>
           <div className="flex items-center gap-3">
             {ibkrState.useIbkr && ibkrState.connected && (
@@ -1958,8 +2250,13 @@ export default function ChartBoard() {
                 IBKR Live
               </span>
             )}
-            <span className="flex items-center gap-1 text-[#26a69a]">■ صعود</span>
-            <span className="flex items-center gap-1 text-[#ef5350]">■ هبوط</span>
+            {alpacaState.useAlpaca && alpacaState.connected && (
+              <span className="flex items-center gap-1 text-[#ffeb3b]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#26a69a] animate-pulse" />
+                Alpaca Live
+              </span>
+            )}
+            <span className="text-[#434651]">H خط | F فيبوناتشي | T ترند | Ctrl+Z تراجع</span>
             <span className="text-[#434651]">|</span>
             <span className="text-[#787b86]">DFA Pro</span>
           </div>
