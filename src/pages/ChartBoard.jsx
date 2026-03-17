@@ -2055,7 +2055,7 @@ export default function ChartBoard() {
   // RENDER
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="flex overflow-hidden bg-[#0c0e14] relative select-none h-[calc(100vh-3.5rem)] lg:h-[calc(100vh-3rem)]" dir="ltr">
+    <div className="flex overflow-hidden bg-[#0c0e14] relative select-none h-[calc(100vh-3.5rem)] lg:h-[calc(100vh-50px)]" dir="ltr">
 
       {/* ── LEFT: Drawing Tools ── */}
       <DrawingToolbar
