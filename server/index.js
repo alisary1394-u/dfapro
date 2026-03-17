@@ -1718,17 +1718,31 @@ app.get('/api/alpaca/stream/:symbol', (req, res) => {
 
   const symbol = req.params.symbol;
 
+  // Disable response buffering (important for proxies like Railway)
+  req.socket.setNoDelay(true);
+  req.socket.setTimeout(0);
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',    // Disable nginx buffering
   });
+  res.flushHeaders();
+
+  // Send initial ping so client knows connection is alive
+  res.write(': connected\n\n');
+
+  // Heartbeat every 15s to keep connection alive through proxies
+  const heartbeat = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
+  }, 15000);
 
   const sub = alpacaApi.subscribeQuotes(symbol, (tick) => {
-    res.write(`data: ${JSON.stringify(tick)}\n\n`);
+    try { res.write(`data: ${JSON.stringify(tick)}\n\n`); } catch {}
   });
 
   req.on('close', () => {
+    clearInterval(heartbeat);
     sub.unsubscribe();
   });
 });

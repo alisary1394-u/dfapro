@@ -1485,7 +1485,8 @@ export default function ChartBoard() {
       // 2. Push directly to chart series — no React re-render needed
       const series = mainSeriesRef.current;
       if (!series) return;
-      const isIntra = isIntradayInterval(selectedTf?.interval);
+      const tfInterval = selectedTf?.interval;
+      const isIntra = isIntradayInterval(tfInterval);
       const nowUnix = Math.floor(Date.now() / 1000);
       const candleTime = isIntra
         ? Math.floor(nowUnix / bucket) * bucket   // aligned to bucket
@@ -1495,7 +1496,7 @@ export default function ChartBoard() {
       const price = tick.price;
 
       try {
-        if (chartType === 'line' || chartType === 'area') {
+        if (chartTypeRef.current === 'line' || chartTypeRef.current === 'area') {
           series.update({ time: candleTime, value: price });
         } else {
           // Same candle bucket → update OHLC
@@ -1519,11 +1520,13 @@ export default function ChartBoard() {
             close: lb.close,
           });
         }
-      } catch { /* ignore time ordering errors */ }
+      } catch (e) {
+        // Time ordering errors are expected during chart rebuilds
+      }
     });
 
     return () => sub.close();
-  }, [selectedStock, alpacaState.connected, alpacaState.useAlpaca, chartType, selectedTf]);
+  }, [selectedStock, alpacaState.connected, alpacaState.useAlpaca, selectedTf]);
 
   // Smart update: if chart is already built, update series in-place (no flicker).
   // Falls back to full rebuild via setCandles() on first load or error.
@@ -2307,6 +2310,12 @@ export default function ChartBoard() {
           {/* Price + Quote (right side of row 1) */}
           {quote && (
             <div className="flex items-center gap-1.5 text-[11px] shrink-0">
+              {alpacaState.connected && alpacaState.useAlpaca && (
+                <span className="relative flex h-2 w-2" title="بيانات لحظية من Alpaca">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#26a69a] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#26a69a]"></span>
+                </span>
+              )}
               <span className="font-bold text-[#d1d4dc]">{quote.price?.toFixed(2)}</span>
               <span className={`font-bold ${isUp ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
                 {isUp ? "+" : ""}{quote.change?.toFixed(2)}

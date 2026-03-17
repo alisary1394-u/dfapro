@@ -122,20 +122,42 @@ export const getAlpacaUniverseStats = async () => {
  * Clients receive ticks within milliseconds of market events.
  */
 export const subscribeAlpacaQuotes = (symbol, onTick) => {
-  const es = new EventSource(`/api/alpaca/stream/${encodeURIComponent(symbol)}`);
+  let es = null;
+  let closed = false;
+  let reconnectTimer = null;
 
-  es.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      onTick(data);
-    } catch { /* ignore */ }
+  const connect = () => {
+    if (closed) return;
+    es = new EventSource(`/api/alpaca/stream/${encodeURIComponent(symbol)}`);
+
+    es.onopen = () => {
+      console.log('[Alpaca SSE] Connected for', symbol);
+    };
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onTick(data);
+      } catch { /* ignore */ }
+    };
+
+    es.onerror = () => {
+      if (closed) return;
+      console.warn('[Alpaca SSE] Error for', symbol, '— reconnecting in 5s');
+      try { es.close(); } catch {}
+      reconnectTimer = setTimeout(connect, 5000);
+    };
   };
 
-  es.onerror = (err) => {
-    console.warn('[Alpaca SSE] Stream error for', symbol, '— readyState:', es.readyState);
-  };
+  connect();
 
-  return { close: () => es.close() };
+  return {
+    close: () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (es) try { es.close(); } catch {}
+    },
+  };
 };
 
 // ─── Data Transformers ───────────────────────────────────────
