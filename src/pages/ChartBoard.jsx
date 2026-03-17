@@ -107,6 +107,40 @@ const RANGES = [
   { label: "كل", value: "max" },
 ];
 
+// Yahoo Finance max range per interval (API hard limits)
+// 1m→7d, 5m→60d, 15m→60d, 30m→60d, 60m→730d, daily/weekly/monthly→unlimited
+const MAX_RANGE_FOR_INTERVAL = {
+  '1min': ['1d', '5d'],
+  '5min': ['1d', '5d', '1mo'],
+  '15min': ['1d', '5d', '1mo'],
+  '30min': ['1d', '5d', '1mo'],
+  '60min': ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', 'ytd'],
+  'daily': null, // all ranges
+  'weekly': null,
+  'monthly': null,
+};
+
+// Given a range, find the smallest interval that supports it
+const RANGE_ORDER = ['1d','5d','1mo','3mo','6mo','1y','2y','5y','10y','ytd','max'];
+function bestIntervalForRange(range) {
+  if (!range) return null;
+  const ri = RANGE_ORDER.indexOf(range);
+  // ytd can be anything from a few days to 12 months
+  if (ri <= 1) return null;                 // 1d, 5d → any interval works
+  if (ri <= 3 || range === 'ytd') return '60min'; // 1mo, 3mo, ytd → at least 60min
+  if (ri <= 5) return '60min';             // 6mo, 1y → 60min (730d limit)
+  if (ri <= 6) return '60min';             // 2y → 60min (730d limit)
+  return 'daily';                           // 5y, 10y, max → must be daily+
+}
+
+// Check if interval supports the given range
+function isIntervalCompatible(interval, range) {
+  if (!range) return true;
+  const allowed = MAX_RANGE_FOR_INTERVAL[interval];
+  if (allowed === null) return true; // daily, weekly, monthly support all ranges
+  return allowed.includes(range);
+}
+
 const CHART_TYPES = [
   { value: "candlestick", label: "شموع يابانية" },
   { value: "heikinashi", label: "هيكن آشي" },
@@ -2063,7 +2097,18 @@ export default function ChartBoard() {
           {/* Range (time period) — fixed, always all options */}
           <div className="flex items-center gap-0 shrink-0">
             {RANGES.map(r => (
-              <button key={r.value} onClick={() => setSelectedRange(selectedRange === r.value ? null : r.value)}
+              <button key={r.value} onClick={() => {
+                if (selectedRange === r.value) { setSelectedRange(null); return; }
+                setSelectedRange(r.value);
+                // Auto-adjust interval if current one can't display this range
+                if (!isIntervalCompatible(selectedTf?.interval, r.value)) {
+                  const minInterval = bestIntervalForRange(r.value);
+                  if (minInterval) {
+                    const tf = INTERVALS.find(t => t.interval === minInterval);
+                    if (tf) setTimeframe(tf.value);
+                  }
+                }
+              }}
                 className={`px-1.5 py-0.5 text-[10px] font-semibold transition-all rounded ${
                   selectedRange === r.value ? "text-[#d4a843] bg-[#d4a843]/15" : "text-[#787b86] hover:text-[#d1d4dc]"
                 }`}>
