@@ -57,6 +57,7 @@ import OpportunityRadar from './pages/OpportunityRadar';
 import OptionsAnalysis from './pages/OptionsAnalysis';
 import Portfolio from './pages/Portfolio';
 import Screener from './pages/Screener';
+import SectorHeatmap from './pages/SectorHeatmap';
 import StockAnalysis from './pages/StockAnalysis';
 import StockNews from './pages/StockNews';
 import TradingBot from './pages/TradingBot';
@@ -76,6 +77,7 @@ export const PAGES = {
     "OptionsAnalysis": OptionsAnalysis,
     "Portfolio": Portfolio,
     "Screener": Screener,
+    "SectorHeatmap": SectorHeatmap,
     "StockAnalysis": StockAnalysis,
     "StockNews": StockNews,
     "TradingBot": TradingBot,

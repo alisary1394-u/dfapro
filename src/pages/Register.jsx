@@ -3,7 +3,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 
 export default function Register() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, setUser, setIsAuthenticated, setAuthError } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,23 +15,45 @@ export default function Register() {
     return <Navigate to="/" replace />;
   }
 
+  const validatePassword = (pw) => {
+    if (pw.length < 8) return 'كلمة المرور يجب أن تكون 8 أحرف على الأقل';
+    if (!/[A-Z]/.test(pw)) return 'كلمة المرور يجب أن تحتوي على حرف كبير';
+    if (!/[a-z]/.test(pw)) return 'كلمة المرور يجب أن تحتوي على حرف صغير';
+    if (!/[0-9]/.test(pw)) return 'كلمة المرور يجب أن تحتوي على رقم';
+    return null;
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setLoading(true);
     setError('');
     setMessage('');
 
+    const pwError = validatePassword(password);
+    if (pwError) {
+      setError(pwError);
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ name, email, password })
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.message || 'فشل إنشاء الحساب');
       }
-      setMessage('تم إنشاء الحساب بنجاح. يمكنك تسجيل الدخول مباشرة.');
+      // Auto-login after registration
+      if (data.user) {
+        setUser(data.user);
+        setIsAuthenticated(true);
+        setAuthError(null);
+      }
+      setMessage('تم إنشاء الحساب بنجاح.');
     } catch (submitError) {
       setError(submitError.message || 'فشل إنشاء الحساب');
     } finally {
@@ -67,7 +89,7 @@ export default function Register() {
             type="password"
             placeholder="كلمة المرور"
             className="w-full rounded-xl bg-[#0f172a] border border-[#334155] px-4 py-3 outline-none"
-            minLength={6}
+            minLength={8}
             required
           />
           {error ? <div className="text-sm text-red-400">{error}</div> : null}

@@ -9,7 +9,7 @@ import {
   Bell, Zap, Menu, X, TrendingUp, Building2, Newspaper,
   Wallet, BarChart3, Activity, ChevronDown, ChevronUp,
   Sparkles, Shield, LineChart, Target, BookOpen,
-  LogOut, Clock, AlertTriangle
+  LogOut, Clock, AlertTriangle, Grid3X3
 } from "lucide-react";
 
 const navGroups = [
@@ -24,6 +24,7 @@ const navGroups = [
     items: [
       { name: "لوحة الرسم البياني", icon: BarChart3, page: "ChartBoard" },
       { name: "متابع السوق", icon: Activity, page: "MarketWatch" },
+      { name: "خريطة القطاعات", icon: Grid3X3, page: "SectorHeatmap" },
     ]
   },
   {

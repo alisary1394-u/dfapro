@@ -118,6 +118,25 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setIsAuthenticated(false);
     setAuthError({ type: 'auth_required', message: 'Authentication required' });
+    // Clear all user data from localStorage to prevent data leakage
+    try {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (
+          key.startsWith('portfolio_') ||
+          key.startsWith('watchlist_') ||
+          key.startsWith('alert_') ||
+          key.startsWith('virtual_') ||
+          key.startsWith('dfa_') ||
+          key === 'dashboard_layout' ||
+          key === 'dashboard_market'
+        )) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch (_) {}
     if (shouldRedirect) {
       window.location.assign('/login');
     }

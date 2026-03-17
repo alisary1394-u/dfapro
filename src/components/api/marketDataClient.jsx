@@ -198,6 +198,27 @@ export const getBatchQuotes = async (symbols, market) => {
   return data?.quotes || {};
 };
 
+// ═══════════════════════════════════════════════════════════════
+// ADVANCED ANALYTICS ENDPOINTS
+// ═══════════════════════════════════════════════════════════════
+
+export const getFearGreed = async () => {
+  return apiFetch('/api/market/fear-greed');
+};
+
+export const getSectorHeatmap = async (market = 'us') => {
+  return apiFetch(`/api/market/sector-heatmap?market=${encodeURIComponent(market)}`);
+};
+
+export const getCorrelation = async (symbols, market = 'us') => {
+  if (!symbols?.length) return null;
+  return apiFetch(`/api/market/correlation?symbols=${encodeURIComponent(symbols.join(','))}&market=${encodeURIComponent(market)}`);
+};
+
+export const getSmartScreener = async (market = 'saudi', strategy = 'momentum') => {
+  return apiFetch(`/api/market/smart-screener?market=${encodeURIComponent(market)}&strategy=${encodeURIComponent(strategy)}`);
+};
+
 // Simulated candles centred around a real price when API limit is hit
 // Prices are anchored to basePrice and cannot drift far from it
 export const buildFallbackCandles = (basePrice = 100, days = 100) => {

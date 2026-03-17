@@ -40,17 +40,57 @@ await db.write();
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
-// CORS - allow requests from GitHub Pages and any origin
+// CORS – restrict origins in production
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : null; // null = allow all in dev
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  const origin = req.headers.origin;
+  if (isProduction && allowedOrigins) {
+    if (origin && allowedOrigins.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
+  } else {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+// ── Rate Limiting (in-memory, per-IP) ──────────────────────
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX_AUTH = 10;      // auth endpoints
+const RATE_LIMIT_MAX_API = 120;      // market data endpoints
+
+const rateLimit = (category, maxReqs) => (req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const key = `${category}:${ip}`;
+  const now = Date.now();
+  let entry = rateLimitMap.get(key);
+  if (!entry || now - entry.start > RATE_LIMIT_WINDOW) {
+    entry = { count: 0, start: now };
+    rateLimitMap.set(key, entry);
+  }
+  entry.count++;
+  if (entry.count > maxReqs) {
+    return res.status(429).json({ error: 'طلبات كثيرة جداً، حاول لاحقاً' });
+  }
+  next();
+};
+// Evict stale rate-limit entries every 2 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateLimitMap) {
+    if (now - v.start > RATE_LIMIT_WINDOW * 2) rateLimitMap.delete(k);
+  }
+}, 2 * 60 * 1000);
 
 // ═══════════════════════════════════════════════════════════════
 // MARKET DATA PROXY (Yahoo Finance)
@@ -655,6 +695,442 @@ app.get('/api/market/market-pulse', async (_req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// ADVANCED ANALYTICS ENDPOINTS
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/market/fear-greed — Composite Fear & Greed Index
+app.get('/api/market/fear-greed', async (_req, res) => {
+  try {
+    const cached = cacheGet('fear-greed');
+    if (cached) return res.json(cached);
+
+    const symbols = ['^GSPC', '^VIX', '^TNX', 'GLD', 'HYG', 'TLT'];
+    const results = await Promise.allSettled(
+      symbols.map(s => yfFetch(`${YF_BASE}/${encodeURIComponent(s)}?interval=1d&range=3mo`))
+    );
+
+    const getData = (idx) => {
+      if (results[idx]?.status !== 'fulfilled') return null;
+      return results[idx].value.chart?.result?.[0];
+    };
+
+    const spx = getData(0);
+    const vix = getData(1);
+    const bonds = getData(2);
+    const gold = getData(3);
+
+    // 1. Market Momentum (S&P 500 vs 125-day MA) => 0-100
+    let momentumScore = 50;
+    if (spx?.indicators?.quote?.[0]?.close) {
+      const closes = spx.indicators.quote[0].close.filter(v => v != null);
+      const current = closes[closes.length - 1];
+      const ma125 = closes.length >= 125
+        ? closes.slice(-125).reduce((a, b) => a + b, 0) / 125
+        : closes.reduce((a, b) => a + b, 0) / closes.length;
+      momentumScore = Math.max(0, Math.min(100, 50 + ((current - ma125) / ma125) * 500));
+    }
+
+    // 2. VIX Level => inverted score (low VIX = greed)
+    let vixScore = 50;
+    if (vix?.meta?.regularMarketPrice) {
+      const vixPrice = vix.meta.regularMarketPrice;
+      // VIX 10=extreme greed(95), 20=neutral(50), 35=extreme fear(5)
+      vixScore = Math.max(0, Math.min(100, 100 - ((vixPrice - 10) / 25) * 100));
+    }
+
+    // 3. Market Breadth (from advancers/decliners within S&P returns)
+    let breadthScore = 50;
+    if (spx?.indicators?.quote?.[0]?.close) {
+      const closes = spx.indicators.quote[0].close.filter(v => v != null);
+      const recent = closes.slice(-20);
+      const upDays = recent.filter((c, i) => i > 0 && c > recent[i - 1]).length;
+      breadthScore = Math.max(0, Math.min(100, (upDays / 19) * 100));
+    }
+
+    // 4. Safe Haven Demand (gold vs bonds ratio proxy)
+    let safeHavenScore = 50;
+    if (gold?.meta?.regularMarketPrice && bonds?.meta?.regularMarketPrice) {
+      const goldChange = ((gold.meta.regularMarketPrice - (gold.meta.previousClose || gold.meta.regularMarketPrice)) / (gold.meta.previousClose || 1)) * 100;
+      // High gold demand = fear
+      safeHavenScore = Math.max(0, Math.min(100, 50 - goldChange * 15));
+    }
+
+    // 5. Put/Call Ratio approximation via volatility trend
+    let pcScore = 50;
+    if (vix?.indicators?.quote?.[0]?.close) {
+      const vixCloses = vix.indicators.quote[0].close.filter(v => v != null);
+      if (vixCloses.length >= 5) {
+        const recent5 = vixCloses.slice(-5);
+        const avg5 = recent5.reduce((a, b) => a + b, 0) / 5;
+        const avg20 = vixCloses.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, vixCloses.length);
+        pcScore = Math.max(0, Math.min(100, 50 - ((avg5 - avg20) / avg20) * 200));
+      }
+    }
+
+    const composite = Math.round(
+      momentumScore * 0.25 +
+      vixScore * 0.25 +
+      breadthScore * 0.20 +
+      safeHavenScore * 0.15 +
+      pcScore * 0.15
+    );
+
+    const getLabel = (score) => {
+      if (score >= 80) return { label: 'طمع شديد', label_en: 'Extreme Greed', color: '#22c55e' };
+      if (score >= 60) return { label: 'طمع', label_en: 'Greed', color: '#84cc16' };
+      if (score >= 40) return { label: 'محايد', label_en: 'Neutral', color: '#eab308' };
+      if (score >= 20) return { label: 'خوف', label_en: 'Fear', color: '#f97316' };
+      return { label: 'خوف شديد', label_en: 'Extreme Fear', color: '#ef4444' };
+    };
+
+    const info = getLabel(composite);
+
+    const payload = {
+      score: composite,
+      label: info.label,
+      label_en: info.label_en,
+      color: info.color,
+      components: {
+        market_momentum: { score: Math.round(momentumScore), label: 'زخم السوق' },
+        volatility: { score: Math.round(vixScore), label: 'التقلب (VIX)' },
+        market_breadth: { score: Math.round(breadthScore), label: 'اتساع السوق' },
+        safe_haven: { score: Math.round(safeHavenScore), label: 'طلب الملاذات الآمنة' },
+        put_call: { score: Math.round(pcScore), label: 'نسبة البيع/الشراء' },
+      },
+      timestamp: Date.now(),
+    };
+
+    cacheSet('fear-greed', payload, 60 * 1000);
+    return res.json(payload);
+  } catch (err) {
+    console.error('Fear & Greed error:', err.message);
+    return res.status(502).json({ error: 'Failed to compute fear & greed index' });
+  }
+});
+
+// GET /api/market/sector-heatmap?market=us|saudi
+app.get('/api/market/sector-heatmap', async (req, res) => {
+  try {
+    const { market = 'us' } = req.query;
+    const cacheKey = `sector-heatmap:${market}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const sectors = market === 'saudi' ? {
+      'البنوك': ['1120.SR', '1180.SR', '1010.SR', '1060.SR', '1050.SR'],
+      'الطاقة': ['2222.SR', '2030.SR', '4030.SR'],
+      'المواد الأساسية': ['2010.SR', '2350.SR', '2020.SR', '2050.SR'],
+      'الاتصالات': ['7010.SR', '7020.SR', '7030.SR'],
+      'التأمين': ['8010.SR', '8020.SR', '8030.SR'],
+      'التجزئة': ['4190.SR', '4200.SR', '4003.SR'],
+      'العقارات': ['4300.SR', '4320.SR', '4310.SR'],
+      'الرعاية الصحية': ['4002.SR', '4004.SR', '4005.SR'],
+    } : {
+      'Technology': ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META', 'AMD', 'CRM', 'ADBE'],
+      'Financial': ['JPM', 'BAC', 'GS', 'V', 'MA', 'BRK-B', 'C'],
+      'Healthcare': ['UNH', 'JNJ', 'PFE', 'ABBV', 'MRK', 'LLY'],
+      'Consumer': ['AMZN', 'TSLA', 'WMT', 'HD', 'NKE', 'MCD'],
+      'Energy': ['XOM', 'CVX', 'COP', 'SLB', 'EOG'],
+      'Communication': ['NFLX', 'DIS', 'CMCSA', 'T', 'VZ'],
+      'Industrial': ['CAT', 'BA', 'HON', 'UPS', 'GE'],
+      'Real Estate': ['AMT', 'PLD', 'CCI', 'SPG', 'O'],
+    };
+
+    const allSymbols = Object.values(sectors).flat();
+    const results = await Promise.allSettled(
+      allSymbols.map(s => yfFetch(`${YF_BASE}/${encodeURIComponent(s)}?interval=1d&range=5d`))
+    );
+
+    const symbolMap = {};
+    results.forEach((r, i) => {
+      const sym = allSymbols[i];
+      if (r.status !== 'fulfilled') { symbolMap[sym] = null; return; }
+      const meta = r.value.chart?.result?.[0]?.meta;
+      const quotes = r.value.chart?.result?.[0]?.indicators?.quote?.[0];
+      if (!meta) { symbolMap[sym] = null; return; }
+      const price = meta.regularMarketPrice ?? 0;
+      const prev = meta.previousClose ?? meta.chartPreviousClose ?? price;
+      const changePct = prev !== 0 ? +((price - prev) / prev * 100).toFixed(2) : 0;
+      const volumes = quotes?.volume?.filter(v => v != null) || [];
+      symbolMap[sym] = {
+        price: +price.toFixed(2),
+        change: changePct,
+        volume: volumes.length > 0 ? volumes[volumes.length - 1] : 0,
+        name: meta.shortName || sym.replace('.SR', ''),
+      };
+    });
+
+    const sectorData = Object.entries(sectors).map(([sectorName, syms]) => {
+      const stocks = syms.map(s => {
+        const rawSym = s.replace('.SR', '');
+        return symbolMap[s] ? { symbol: rawSym, ...symbolMap[s] } : null;
+      }).filter(Boolean);
+
+      const avgChange = stocks.length > 0
+        ? +(stocks.reduce((sum, s) => sum + s.change, 0) / stocks.length).toFixed(2)
+        : 0;
+      const totalVolume = stocks.reduce((sum, s) => sum + (s.volume || 0), 0);
+
+      return {
+        sector: sectorName,
+        change: avgChange,
+        volume: totalVolume,
+        stocks,
+        stock_count: stocks.length,
+      };
+    }).sort((a, b) => b.change - a.change);
+
+    const payload = {
+      market,
+      sectors: sectorData,
+      timestamp: Date.now(),
+    };
+    cacheSet(cacheKey, payload, 2 * 60 * 1000);
+    return res.json(payload);
+  } catch (err) {
+    console.error('Sector heatmap error:', err.message);
+    return res.status(502).json({ error: 'Failed to fetch sector heatmap' });
+  }
+});
+
+// GET /api/market/correlation?symbols=AAPL,MSFT,NVDA,GOOGL&market=us
+app.get('/api/market/correlation', async (req, res) => {
+  try {
+    const { symbols: symbolsStr, market = 'us' } = req.query;
+    if (!symbolsStr) return res.status(400).json({ error: 'symbols required' });
+
+    const symbolList = symbolsStr.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
+    if (symbolList.length < 2) return res.status(400).json({ error: 'at least 2 symbols required' });
+
+    const cacheKey = `correlation:${symbolList.join(',')}:${market}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const results = await Promise.allSettled(
+      symbolList.map(s => {
+        const ySymbol = toYahooSymbol(s, market);
+        return yfFetch(`${YF_BASE}/${encodeURIComponent(ySymbol)}?interval=1d&range=6mo`);
+      })
+    );
+
+    // Extract daily returns for each symbol
+    const priceArrays = {};
+    results.forEach((r, i) => {
+      const sym = symbolList[i];
+      if (r.status !== 'fulfilled') return;
+      const closes = r.value.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
+      if (!closes) return;
+      const clean = closes.filter(v => v != null);
+      // Compute daily returns
+      const returns = [];
+      for (let j = 1; j < clean.length; j++) {
+        returns.push((clean[j] - clean[j - 1]) / clean[j - 1]);
+      }
+      priceArrays[sym] = returns;
+    });
+
+    // Pearson correlation between two return arrays
+    const pearson = (x, y) => {
+      const n = Math.min(x.length, y.length);
+      if (n < 10) return 0;
+      const xa = x.slice(-n), ya = y.slice(-n);
+      const meanX = xa.reduce((a, b) => a + b, 0) / n;
+      const meanY = ya.reduce((a, b) => a + b, 0) / n;
+      let num = 0, denX = 0, denY = 0;
+      for (let i = 0; i < n; i++) {
+        const dx = xa[i] - meanX;
+        const dy = ya[i] - meanY;
+        num += dx * dy;
+        denX += dx * dx;
+        denY += dy * dy;
+      }
+      const den = Math.sqrt(denX * denY);
+      return den === 0 ? 0 : +(num / den).toFixed(4);
+    };
+
+    const matrix = {};
+    const availableSymbols = symbolList.filter(s => priceArrays[s]);
+
+    for (const s1 of availableSymbols) {
+      matrix[s1] = {};
+      for (const s2 of availableSymbols) {
+        matrix[s1][s2] = s1 === s2 ? 1 : pearson(priceArrays[s1], priceArrays[s2]);
+      }
+    }
+
+    // Find strongly correlated / inversely correlated pairs
+    const insights = [];
+    for (let i = 0; i < availableSymbols.length; i++) {
+      for (let j = i + 1; j < availableSymbols.length; j++) {
+        const corr = matrix[availableSymbols[i]][availableSymbols[j]];
+        if (corr > 0.8) insights.push({ pair: `${availableSymbols[i]}/${availableSymbols[j]}`, correlation: corr, type: 'ارتباط قوي', type_en: 'Strong Positive' });
+        else if (corr < -0.3) insights.push({ pair: `${availableSymbols[i]}/${availableSymbols[j]}`, correlation: corr, type: 'ارتباط عكسي', type_en: 'Negative' });
+      }
+    }
+
+    const payload = {
+      symbols: availableSymbols,
+      matrix,
+      insights,
+      period: '6 أشهر',
+      timestamp: Date.now(),
+    };
+
+    cacheSet(cacheKey, payload, 5 * 60 * 1000);
+    return res.json(payload);
+  } catch (err) {
+    console.error('Correlation error:', err.message);
+    return res.status(502).json({ error: 'Failed to compute correlation matrix' });
+  }
+});
+
+// GET /api/market/smart-screener?market=us|saudi&strategy=momentum|value|breakout|oversold
+app.get('/api/market/smart-screener', async (req, res) => {
+  try {
+    const { market = 'saudi', strategy = 'momentum' } = req.query;
+    const cacheKey = `smart-screener:${market}:${strategy}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const symbols = market === 'saudi'
+      ? ['2222.SR','1120.SR','2010.SR','7010.SR','1180.SR','2380.SR','1211.SR','1010.SR','4190.SR','2350.SR','2050.SR','1060.SR','7020.SR','7030.SR','2280.SR','4200.SR','3010.SR','8010.SR','2082.SR','4030.SR','2020.SR','1050.SR','2030.SR','4003.SR','4002.SR']
+      : ['AAPL','MSFT','NVDA','TSLA','AMZN','META','GOOGL','AMD','NFLX','JPM','BAC','V','WMT','DIS','INTC','COIN','PLTR','SOFI','CRM','ORCL','UNH','JNJ','PFE','XOM','CVX'];
+
+    const results = await Promise.allSettled(
+      symbols.map(s => yfFetch(`${YF_BASE}/${encodeURIComponent(s)}?interval=1d&range=3mo`))
+    );
+
+    const analyzed = [];
+    results.forEach((r, i) => {
+      if (r.status !== 'fulfilled') return;
+      const result = r.value.chart?.result?.[0];
+      if (!result?.indicators?.quote?.[0]?.close) return;
+
+      const meta = result.meta;
+      const closes = result.indicators.quote[0].close.filter(v => v != null);
+      const volumes = result.indicators.quote[0].volume?.filter(v => v != null) || [];
+      const highs = result.indicators.quote[0].high?.filter(v => v != null) || [];
+      const lows = result.indicators.quote[0].low?.filter(v => v != null) || [];
+      if (closes.length < 20) return;
+
+      const price = closes[closes.length - 1];
+      const prev = meta.previousClose ?? closes[closes.length - 2] ?? price;
+      const changePct = prev !== 0 ? +((price - prev) / prev * 100).toFixed(2) : 0;
+
+      // RSI calculation
+      const gains = [], losses = [];
+      for (let j = 1; j < closes.length; j++) {
+        const diff = closes[j] - closes[j - 1];
+        gains.push(Math.max(0, diff));
+        losses.push(Math.max(0, -diff));
+      }
+      const period = 14;
+      const avgGain = gains.slice(-period).reduce((a, b) => a + b, 0) / period;
+      const avgLoss = losses.slice(-period).reduce((a, b) => a + b, 0) / period;
+      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+      const rsi = +(100 - 100 / (1 + rs)).toFixed(2);
+
+      // Moving averages
+      const sma20 = +(closes.slice(-20).reduce((a, b) => a + b, 0) / 20).toFixed(2);
+      const sma50 = closes.length >= 50
+        ? +(closes.slice(-50).reduce((a, b) => a + b, 0) / 50).toFixed(2)
+        : sma20;
+
+      // Volume trend
+      const avgVol = volumes.length >= 20
+        ? volumes.slice(-20).reduce((a, b) => a + b, 0) / 20
+        : (volumes.length > 0 ? volumes.reduce((a, b) => a + b, 0) / volumes.length : 0);
+      const currentVol = volumes.length > 0 ? volumes[volumes.length - 1] : 0;
+      const volRatio = avgVol > 0 ? +(currentVol / avgVol).toFixed(2) : 1;
+
+      // 52-week high/low distance
+      const high52 = Math.max(...highs);
+      const low52 = Math.min(...lows);
+      const distFromHigh = high52 > 0 ? +((price - high52) / high52 * 100).toFixed(2) : 0;
+      const distFromLow = low52 > 0 ? +((price - low52) / low52 * 100).toFixed(2) : 0;
+
+      const rawSymbol = symbols[i].replace('.SR', '');
+
+      // Strategy-specific scoring
+      let score = 0;
+      let signals = [];
+      if (strategy === 'momentum') {
+        if (rsi > 50 && rsi < 70) score += 30;
+        if (price > sma20) score += 25;
+        if (price > sma50) score += 20;
+        if (volRatio > 1.2) score += 15;
+        if (changePct > 0) score += 10;
+        if (price > sma20) signals.push('فوق المتوسط 20');
+        if (rsi > 50) signals.push(`RSI ${rsi}`);
+        if (volRatio > 1.5) signals.push('حجم مرتفع');
+      } else if (strategy === 'value') {
+        if (distFromHigh < -20) score += 35;
+        if (rsi < 40) score += 25;
+        if (distFromLow < 15) score += 20;
+        if (price < sma50) score += 20;
+        if (rsi < 35) signals.push(`RSI منخفض ${rsi}`);
+        if (distFromHigh < -25) signals.push('بعيد عن القمة');
+      } else if (strategy === 'breakout') {
+        if (distFromHigh > -3) score += 40;
+        if (volRatio > 1.5) score += 25;
+        if (rsi > 55 && rsi < 75) score += 20;
+        if (changePct > 1) score += 15;
+        if (distFromHigh > -2) signals.push('قرب القمة');
+        if (volRatio > 2) signals.push('حجم اختراق');
+      } else if (strategy === 'oversold') {
+        if (rsi < 30) score += 40;
+        else if (rsi < 40) score += 20;
+        if (distFromHigh < -30) score += 25;
+        if (price < sma50 * 0.95) score += 20;
+        if (volRatio > 1.3) score += 15;
+        if (rsi < 30) signals.push('تشبع بيعي');
+        if (distFromHigh < -30) signals.push('هبوط كبير');
+      }
+
+      analyzed.push({
+        symbol: rawSymbol,
+        name: meta.shortName || rawSymbol,
+        price: +price.toFixed(2),
+        change: changePct,
+        rsi,
+        sma20,
+        sma50,
+        volume_ratio: volRatio,
+        dist_from_high: distFromHigh,
+        dist_from_low: distFromLow,
+        score,
+        signals,
+        market,
+      });
+    });
+
+    analyzed.sort((a, b) => b.score - a.score);
+
+    const strategyLabels = {
+      momentum: 'الزخم',
+      value: 'القيمة',
+      breakout: 'الاختراق',
+      oversold: 'التشبع البيعي',
+    };
+
+    const payload = {
+      strategy,
+      strategy_label: strategyLabels[strategy] || strategy,
+      market,
+      results: analyzed.slice(0, 15),
+      scanned: analyzed.length,
+      timestamp: Date.now(),
+    };
+
+    cacheSet(cacheKey, payload, 3 * 60 * 1000);
+    return res.json(payload);
+  } catch (err) {
+    console.error('Smart screener error:', err.message);
+    return res.status(502).json({ error: 'Failed to run smart screener' });
+  }
+});
+
 // GET /api/market/batch-quotes?symbols=AAPL,MSFT,NVDA&market=us
 app.get('/api/market/batch-quotes', async (req, res) => {
   try {
@@ -1219,13 +1695,29 @@ app.get('/api/auth/me', authRequired, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
+// Apply rate limiting to auth endpoints
+app.use('/api/auth/login', rateLimit('auth', RATE_LIMIT_MAX_AUTH));
+app.use('/api/auth/register', rateLimit('auth', RATE_LIMIT_MAX_AUTH));
+// Apply rate limiting to market data endpoints
+app.use('/api/market', rateLimit('api', RATE_LIMIT_MAX_API));
+
 app.post('/api/auth/register', async (req, res) => {
   const name = String(req.body?.name || '').trim();
   const email = normalizeEmail(req.body?.email);
   const password = String(req.body?.password || '');
 
-  if (!name || !email || password.length < 6) {
-    return res.status(400).json({ message: 'Invalid registration data' });
+  if (!name || name.length > 100) {
+    return res.status(400).json({ message: 'الاسم مطلوب (100 حرف كحد أقصى)' });
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!email || !emailRegex.test(email)) {
+    return res.status(400).json({ message: 'بريد إلكتروني غير صالح' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ message: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' });
+  }
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+    return res.status(400).json({ message: 'كلمة المرور يجب أن تحتوي على حرف كبير وصغير ورقم' });
   }
 
   const exists = db.data.users.find((user) => user.email === email);

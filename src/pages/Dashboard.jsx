@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse, getBrokerUniverseStats } from "@/components/api/marketDataClient";
+import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse, getBrokerUniverseStats, getFearGreed } from "@/components/api/marketDataClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { useBroker } from "@/lib/BrokerContext";
@@ -11,7 +11,7 @@ import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import { useDashboardLayout } from "@/components/dashboard/useDashboardLayout";
 import {
   TrendingUp, TrendingDown, BarChart3, Activity, Flame, Brain, Sparkles, Target,
-  CalendarDays, Globe2, DollarSign, Bitcoin, ShieldCheck, Waves, Radar
+  CalendarDays, Globe2, DollarSign, Bitcoin, ShieldCheck, Waves, Radar, Gauge
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -75,11 +75,14 @@ export default function Dashboard() {
   const [liveStats, setLiveStats] = useState(null);
   const [marketPulse, setMarketPulse] = useState(null);
   const [universeStats, setUniverseStats] = useState(null);
+  const [fearGreed, setFearGreed] = useState(null);
 
   // Fetch live data based on selected market
   useEffect(() => {
+    let cancelled = false;
     const fetchAll = () => {
       getTopMovers(market).then((data) => {
+        if (cancelled) return;
         setLiveMovers(data);
         if (data?.gainers && data?.losers) {
           const allStocks = [...(data.gainers || []), ...(data.losers || [])];
@@ -88,15 +91,16 @@ export default function Dashboard() {
           setLiveStats({ up, down, total: allStocks.length });
         }
       }).catch(() => {});
-      getForex("USD", "SAR").then(setForex).catch(() => {});
-      getCrypto("BTC", "USD").then(setCrypto).catch(() => {});
-      getMarketPulse().then(setMarketPulse).catch(() => {});
-      getBrokerUniverseStats().then(setUniverseStats).catch(() => {});
+      getForex("USD", "SAR").then(d => { if (!cancelled) setForex(d); }).catch(() => {});
+      getCrypto("BTC", "USD").then(d => { if (!cancelled) setCrypto(d); }).catch(() => {});
+      getMarketPulse().then(d => { if (!cancelled) setMarketPulse(d); }).catch(() => {});
+      getBrokerUniverseStats().then(d => { if (!cancelled) setUniverseStats(d); }).catch(() => {});
+      getFearGreed().then(d => { if (!cancelled) setFearGreed(d); }).catch(() => {});
     };
     fetchAll();
     const refreshMs = broker?.active ? 5000 : 12000;
     const iv = setInterval(fetchAll, refreshMs);
-    return () => clearInterval(iv);
+    return () => { cancelled = true; clearInterval(iv); };
   }, [market, broker?.active]);
 
   const gainers = liveMovers?.gainers?.length
@@ -282,13 +286,13 @@ export default function Dashboard() {
           { label: "أسهم هابطة", value: liveStats ? String(liveStats.down) : "—", sub: liveStats ? `من ${liveStats.total} سهم` : "جاري التحميل", icon: TrendingDown, color: "#ef4444", accent: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.15)" },
           { label: "الأكثر ارتفاعاً", value: gainers?.[0]?.symbol || "—", sub: gainers?.[0]?.name || "", icon: Activity, color: "#d4a843", accent: "rgba(212,168,67,0.08)", border: "rgba(212,168,67,0.15)" },
           {
-            label: "نبض السوق العالمي",
-            value: regimeAr,
-            sub: marketPulse?.breadth ? `صاعد/هابط ${marketPulse.breadth.advancers}/${marketPulse.breadth.decliners}` : "جاري التحميل",
-            icon: BarChart3,
-            color: marketPulse?.regime === "Risk-On" ? "#10b981" : marketPulse?.regime === "Risk-Off" ? "#ef4444" : "#3b82f6",
-            accent: "rgba(59,130,246,0.08)",
-            border: "rgba(59,130,246,0.15)"
+            label: "الخوف والطمع",
+            value: fearGreed ? `${fearGreed.score}` : "—",
+            sub: fearGreed ? fearGreed.label : "جاري التحميل",
+            icon: Gauge,
+            color: fearGreed?.color || "#3b82f6",
+            accent: fearGreed?.color ? `${fearGreed.color}14` : "rgba(59,130,246,0.08)",
+            border: fearGreed?.color ? `${fearGreed.color}28` : "rgba(59,130,246,0.15)"
           },
         ].map((stat) => (
           <div
