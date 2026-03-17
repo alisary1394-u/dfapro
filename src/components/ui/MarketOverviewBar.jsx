@@ -63,20 +63,22 @@ export default function MarketOverviewBar({ compact = false }) {
           const isUp = (idx.change_percent ?? 0) >= 0;
           const marketStatus = stateLabelAr(idx.market_state, idx.is_open);
           return (
-            <div key={idx.name ?? i} className="flex items-center gap-2.5 shrink-0">
-              <div>
-                <span className={`text-[9px] font-bold block leading-none mb-1 ${idx.is_open ? "text-emerald-400" : "text-red-400"}`}>
+            <div key={idx.name ?? i} className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="flex flex-col items-start">
+                  <span className="text-[10px] text-[#64748b] font-bold leading-tight">{idx.name}</span>
+                  <span className={`text-xs font-black text-white leading-tight`}>
+                    {idx.value?.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isUp ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+                  {isUp ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+                  {isUp ? "+" : ""}{idx.change_percent?.toFixed(2)}%
+                </div>
+                <span className={`text-[8px] font-semibold px-1 py-0.5 rounded ${idx.is_open ? "text-emerald-400 bg-emerald-500/10" : "text-red-400 bg-red-500/10"}`}>
                   {marketStatus}
                 </span>
-                <span className="text-[10px] text-[#475569] font-medium block leading-none mb-0.5">{idx.name}</span>
-                <span className="text-[9px] text-[#334155] font-medium block leading-none mb-0.5">المصدر: {idx.source || "Yahoo Finance"}</span>
-                <span className={`${compact ? 'text-xs' : 'text-sm'} font-black text-white`}>
-                  {idx.value?.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isUp ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
-                {isUp ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
-                {isUp ? "+" : ""}{idx.change_percent?.toFixed(2)}%
+                {!compact && <span className="text-[8px] text-[#334155]">{idx.source || "Yahoo Finance"}</span>}
               </div>
               {i < indices.length - 1 && <div className="w-px h-5 bg-[#1a2540] shrink-0" />}
             </div>
