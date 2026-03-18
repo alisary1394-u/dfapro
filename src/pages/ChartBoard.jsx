@@ -64,11 +64,10 @@ import {
   calcStochastic, toHeikinAshi
 } from "@/components/charts/indicatorUtils";
 
-// ═══════════════════════════════════════════════════════════════
-// MARKET DATA
-// ═══════════════════════════════════════════════════════════════
+
+
+// القطاعات السعودية
 const SAUDI_SECTORS = [
-  { sector: "المؤشرات", items: [{ symbol: "TASI", name: "تاسي" }, { symbol: "MI30", name: "ام آي 30" }, { symbol: "TFNI", name: "تفني" }] },
   { sector: "الطاقة والصناعة", items: [{ symbol: "2222", name: "أرامكو" }, { symbol: "2010", name: "سابك" }, { symbol: "2030", name: "سابك للبتر." }, { symbol: "2380", name: "بترو رابغ" }, { symbol: "2381", name: "الحفر العربية" }, { symbol: "2382", name: "أديس" }] },
   { sector: "البنوك", items: [{ symbol: "1120", name: "الراجحي" }, { symbol: "1180", name: "الأهلي" }, { symbol: "1010", name: "الرياض" }, { symbol: "1020", name: "الجزيرة" }, { symbol: "1060", name: "البلاد" }, { symbol: "1150", name: "البنك الأهلي" }, { symbol: "1140", name: "التنمية" }] },
   { sector: "الاتصالات", items: [{ symbol: "7010", name: "الاتصالات" }, { symbol: "7020", name: "موبايلي" }, { symbol: "7030", name: "زين" }] },
@@ -79,6 +78,8 @@ const SAUDI_SECTORS = [
   { sector: "الكيماويات", items: [{ symbol: "2001", name: "كيماويات" }, { symbol: "2020", name: "ساف" }, { symbol: "2210", name: "نماء" }] },
   { sector: "التجزئة", items: [{ symbol: "4001", name: "أسواق" }, { symbol: "4003", name: "إكسترا" }, { symbol: "4190", name: "جرير" }] },
 ];
+
+
 
 const US_STOCKS = [
   { symbol: "SPX", name: "S&P 500" }, { symbol: "NDX", name: "ناسداك" }, { symbol: "DJI", name: "داو جونز" },
@@ -316,28 +317,39 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
           if (acctList.length > 0) {
             const selectedAcct = acctList[0]?.id;
             setIbkrState(prev => ({ ...prev, selectedAccount: selectedAcct }));
-            try {
+          }
+        } catch {}
+      }
+    } catch (err) {
+      setError('فشل الاتصال بـ IB Gateway');
+    }
+    setChecking(false);
+  };
 
-        {error && (
-          <div className="flex items-start gap-2 p-2 rounded-lg bg-[#ef5350]/10 border border-[#ef5350]/20">
-            <AlertCircle className="w-3.5 h-3.5 text-[#ef5350] shrink-0 mt-0.5" />
-            <p className="text-[10px] text-[#ef5350] leading-relaxed">{error}</p>
-          </div>
-        )}
-
-        {/* Instructions */}
-        <div className="bg-[#0c0e14] rounded-lg p-2.5 space-y-1.5 border border-[#2a2e39]/50">
-          <p className="text-[10px] font-bold text-[#787b86]">خطوات الإعداد:</p>
-          <ol className="text-[9px] text-[#787b86] space-y-1 list-decimal pr-4 leading-relaxed">
-            <li>قم بتشغيل <span className="text-[#ff9800] font-bold">IB Gateway</span></li>
-            <li>اختر <span className="text-[#ff9800] font-bold">IB API</span> وسجّل الدخول</li>
-            <li>المنفذ: 4001 (تداول حي) أو 4002 (تداول ورقي)</li>
-            <li>ارجع هنا واضغط "اتصل بـ IB Gateway"</li>
-          </ol>
-        </div>
-      </div>
-    </div>
-  );
+    // Smart update: if chart is already built, update series in-place (no flicker).
+    // Falls back to full rebuild via setCandles() on first load or error.
+    const smartSetCandles = (processed) => {
+      if (chartBuiltRef.current && mainSeriesRef.current) {
+        try {
+          const ct = chartTypeRef.current;
+          let displayData = processed;
+          if (ct === 'heikinashi') displayData = toHeikinAshi(processed);
+          if (ct === 'line' || ct === 'area') {
+            mainSeriesRef.current.setData(displayData.map(c => ({ time: c.time, value: c.close })));
+          } else {
+            mainSeriesRef.current.setData(displayData);
+          }
+          if (volumeSeriesRef.current) {
+            volumeSeriesRef.current.setData(processed.map(c => ({
+              time: c.time, value: c.volume || 0,
+              color: c.close >= c.open ? 'rgba(38,166,154,0.25)' : 'rgba(239,83,80,0.25)',
+            })));
+          }
+          return; // success — no chart rebuild
+        } catch { /* fall through to full rebuild */ }
+      }
+      setCandles(processed);
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2806,7 +2818,6 @@ export default function ChartBoard() {
         </div>
       </div>
     </div>
-
     {/* ── RIGHT SIDEBAR ── */}
     {showRightSidebar && (
       <RightSidebar
@@ -2820,75 +2831,50 @@ export default function ChartBoard() {
         handleSelectMarket={handleSelectMarket}
       />
     )}
+  );
 
+  // fetchCandles داخل المكون
+  const fetchCandles = async () => {
+    if (!chartBuiltRef.current) setLoading(true);
 
+    // ── IBKR candles ──
+    if (ibkrState.connected && ibkrState.useIbkr) {
+      try {
+        const info = await resolveConid(selectedStock.symbol);
+        if (!info?.conid) { setLoading(false); return; }
+        const historyResponse = await getHistoricalData(info.conid, selectedTf.interval, info.exchange, info.currency, info.secType);
+        const ibkrCandles = parseHistoryToCandles(historyResponse);
 
-// Smart update: if chart is already built, update series in-place (no flicker).
-// Falls back to full rebuild via setCandles() on first load or error.
-const smartSetCandles = (processed) => {
-  if (chartBuiltRef.current && mainSeriesRef.current) {
-    try {
-      const ct = chartTypeRef.current;
-      let displayData = processed;
-      if (ct === 'heikinashi') displayData = toHeikinAshi(processed);
-      if (ct === 'line' || ct === 'area') {
-        mainSeriesRef.current.setData(displayData.map(c => ({ time: c.time, value: c.close })));
-      } else {
-        mainSeriesRef.current.setData(displayData);
-      }
-      if (volumeSeriesRef.current) {
-        volumeSeriesRef.current.setData(processed.map(c => ({
-          time: c.time, value: c.volume || 0,
-          color: c.close >= c.open ? 'rgba(38,166,154,0.25)' : 'rgba(239,83,80,0.25)',
-        })));
-      }
-      return; // success — no chart rebuild
-    } catch { /* fall through to full rebuild */ }
-  }
-  setCandles(processed);
-};
-
-const fetchCandles = async () => {
-  if (!chartBuiltRef.current) setLoading(true);
-
-  // ── IBKR candles ──
-  if (ibkrState.connected && ibkrState.useIbkr) {
-    try {
-      const info = await resolveConid(selectedStock.symbol);
-      if (!info?.conid) { setLoading(false); return; }
-      const historyResponse = await getHistoricalData(info.conid, selectedTf.interval, info.exchange, info.currency, info.secType);
-      const ibkrCandles = parseHistoryToCandles(historyResponse);
-
-      if (ibkrCandles.length > 0) {
-        // Normalize times
-        const isIntraday = isIntradayInterval(selectedTf.interval);
-        const normalized = ibkrCandles.map(c => {
-          let t = c.time;
-          if (!isIntraday && typeof t === 'number') {
-            t = new Date(t * 1000).toISOString().substring(0, 10);
+        if (ibkrCandles.length > 0) {
+          // Normalize times
+          const isIntraday = isIntradayInterval(selectedTf.interval);
+          const normalized = ibkrCandles.map(c => {
+            let t = c.time;
+            if (!isIntraday && typeof t === 'number') {
+              t = new Date(t * 1000).toISOString().substring(0, 10);
+            }
+            return { ...c, time: t };
+          });
+          const seen = new Set();
+          const processed = normalized
+            .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
+            .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
+          if (processed.length > 0) {
+            smartSetCandles(processed);
+            setCurrentBar(processed[processed.length - 1]);
           }
-          return { ...c, time: t };
-        });
-        const seen = new Set();
-        const processed = normalized
-          .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
-          .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
-        if (processed.length > 0) {
-          smartSetCandles(processed);
-          setCurrentBar(processed[processed.length - 1]);
         }
+      } catch (err) {
+        console.error('[IBKR] History error:', err);
       }
-    } catch (err) {
-      console.error('[IBKR] History error:', err);
+      setLoading(false);
+      return;
     }
-    setLoading(false);
-    return;
-  }
 
-  // ── Alpaca candles ──
-  if (alpacaState.connected && alpacaState.useAlpaca) {
-    try {
-      const bars = await getAlpacaBars(selectedStock.symbol, selectedTf.interval, selectedRange || '');
+    // ─ـ Alpaca candles ــ
+    if (alpacaState.connected && alpacaState.useAlpaca) {
+      try {
+        const bars = await getAlpacaBars(selectedStock.symbol, selectedTf.interval, selectedRange || '');
       const alpacaCandles = parseAlpacaBars(bars);
 
       if (alpacaCandles.length > 0) {
