@@ -683,7 +683,7 @@ export default function ChartBoard() {
   // RENDER
   // ═══════════════════════════════════════════════════════════
   return (
-    <div className="flex h-screen overflow-hidden bg-[#060a11] -m-4 md:-m-6 lg:-m-8 relative">
+    <div className="flex h-[calc(100vh-3.5rem)] lg:h-[calc(100vh-50px)] overflow-hidden bg-[#060a11] relative">
 
       {/* ── RIGHT SIDEBAR: Stocks ── */}
       <div className="w-48 shrink-0 bg-[#0d1420] border-l border-[#1a2540] flex flex-col overflow-hidden">
