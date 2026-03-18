@@ -1954,7 +1954,7 @@ app.get('/api/polygon/stream/:symbol', (req, res) => {
 });
 
 // ── Polygon S3 Flat Files endpoint ──
-const { fetchCandlesFromS3 } = require('./polygonS3.js');
+import { fetchCandlesFromS3 } from './polygonS3.js';
 app.get('/api/polygon/s3', async (req, res) => {
   try {
     const { accessKeyId, secretAccessKey, endpoint, bucket, symbol, filePath } = req.query;

@@ -1,9 +1,8 @@
 // Polygon S3 Flat Files loader
 // Usage: download CSV for symbol from S3, parse to candles
 
-const AWS = require('aws-sdk');
-const csv = require('csv-parser');
-const { Readable } = require('stream');
+import AWS from 'aws-sdk';
+import csv from 'csv-parser';
 
 function getS3Client({ accessKeyId, secretAccessKey, endpoint, bucket }) {
   return new AWS.S3({
@@ -39,6 +38,6 @@ async function fetchCandlesFromS3({ accessKeyId, secretAccessKey, endpoint, buck
   });
 }
 
-module.exports = {
+export {
   fetchCandlesFromS3,
 };
