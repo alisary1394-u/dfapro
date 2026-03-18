@@ -411,6 +411,13 @@ export default function ChartBoard() {
     stochastic: { enabled: false, kPeriod: 14, dPeriod: 3 },
   });
 
+  // Drawing state
+  const drawCanvasRef = useRef(null);
+  const drawingsRef = useRef([]);
+  const isDrawingRef = useRef(false);
+  const drawStartRef = useRef(null);
+  const freehandPointsRef = useRef([]);
+
   // Chart refs
   const mainContainerRef = useRef(null);
   const mainChartRef = useRef(null);
@@ -669,6 +676,248 @@ export default function ChartBoard() {
     };
   }, [candles, chartType, overlays, subs]);
 
+  // ── Drawing System ──
+  const redrawCanvas = () => {
+    const canvas = drawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawingsRef.current.forEach(d => renderDrawing(ctx, d));
+  };
+
+  const renderDrawing = (ctx, d) => {
+    ctx.strokeStyle = d.color || '#d4a843';
+    ctx.lineWidth = d.lineWidth || 1.5;
+    ctx.fillStyle = d.color || '#d4a843';
+    ctx.setLineDash(d.dash || []);
+    ctx.font = '13px Tajawal, sans-serif';
+
+    switch (d.type) {
+      case 'trendline':
+        ctx.beginPath();
+        ctx.moveTo(d.x1, d.y1);
+        ctx.lineTo(d.x2, d.y2);
+        ctx.stroke();
+        break;
+      case 'hline':
+        ctx.beginPath();
+        ctx.moveTo(0, d.y);
+        ctx.lineTo(ctx.canvas.width, d.y);
+        ctx.stroke();
+        // price label
+        if (d.label) {
+          ctx.fillStyle = '#060a11';
+          ctx.fillRect(ctx.canvas.width - 70, d.y - 10, 65, 18);
+          ctx.fillStyle = d.color || '#d4a843';
+          ctx.textAlign = 'right';
+          ctx.fillText(d.label, ctx.canvas.width - 10, d.y + 4);
+        }
+        break;
+      case 'vline':
+        ctx.beginPath();
+        ctx.moveTo(d.x, 0);
+        ctx.lineTo(d.x, ctx.canvas.height);
+        ctx.stroke();
+        break;
+      case 'rect':
+        ctx.strokeRect(d.x1, d.y1, d.x2 - d.x1, d.y2 - d.y1);
+        ctx.fillStyle = (d.color || '#d4a843') + '10';
+        ctx.fillRect(d.x1, d.y1, d.x2 - d.x1, d.y2 - d.y1);
+        break;
+      case 'circle': {
+        const rx = Math.abs(d.x2 - d.x1) / 2;
+        const ry = Math.abs(d.y2 - d.y1) / 2;
+        const cx = (d.x1 + d.x2) / 2;
+        const cy = (d.y1 + d.y2) / 2;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      }
+      case 'freehand':
+        if (d.points && d.points.length > 1) {
+          ctx.beginPath();
+          ctx.moveTo(d.points[0].x, d.points[0].y);
+          d.points.forEach(p => ctx.lineTo(p.x, p.y));
+          ctx.stroke();
+        }
+        break;
+      case 'text':
+        ctx.fillStyle = d.color || '#d4a843';
+        ctx.textAlign = 'right';
+        ctx.fillText(d.text, d.x, d.y);
+        break;
+      case 'fib': {
+        const fibLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+        const fibColors = ['#ff4757', '#f59e0b', '#22d3ee', '#a78bfa', '#22d3ee', '#f59e0b', '#00c087'];
+        const range = d.y2 - d.y1;
+        fibLevels.forEach((lvl, i) => {
+          const y = d.y1 + range * lvl;
+          ctx.strokeStyle = fibColors[i];
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(d.x1, y);
+          ctx.lineTo(d.x2, y);
+          ctx.stroke();
+          ctx.fillStyle = fibColors[i];
+          ctx.textAlign = 'left';
+          ctx.fillText(`${(lvl * 100).toFixed(1)}%`, d.x1 + 5, y - 3);
+        });
+        ctx.setLineDash([]);
+        break;
+      }
+      case 'measure': {
+        // dashed box
+        ctx.setLineDash([5, 3]);
+        ctx.strokeRect(d.x1, d.y1, d.x2 - d.x1, d.y2 - d.y1);
+        ctx.setLineDash([]);
+        // label
+        const dx = Math.abs(d.x2 - d.x1);
+        const dy = Math.abs(d.y2 - d.y1);
+        const midX = (d.x1 + d.x2) / 2;
+        const midY = (d.y1 + d.y2) / 2;
+        ctx.fillStyle = '#060a11cc';
+        ctx.fillRect(midX - 35, midY - 10, 70, 20);
+        ctx.fillStyle = '#d4a843';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${dx.toFixed(0)}×${dy.toFixed(0)}`, midX, midY + 4);
+        break;
+      }
+    }
+    ctx.setLineDash([]);
+  };
+
+  // Resize drawing canvas to match chart container
+  useEffect(() => {
+    const container = mainContainerRef.current;
+    const canvas = drawCanvasRef.current;
+    if (!container || !canvas) return;
+    const sync = () => {
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+      redrawCanvas();
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [candles]);
+
+  // Mouse handlers for drawing
+  const getCanvasPos = (e) => {
+    const rect = drawCanvasRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const handleDrawMouseDown = (e) => {
+    if (!drawingTool || drawingTool === 'crosshair') return;
+    const pos = getCanvasPos(e);
+    isDrawingRef.current = true;
+    drawStartRef.current = pos;
+
+    if (drawingTool === 'freehand') {
+      freehandPointsRef.current = [pos];
+    }
+    if (drawingTool === 'text') {
+      const text = prompt('أدخل النص:');
+      if (text) {
+        drawingsRef.current.push({ type: 'text', x: pos.x, y: pos.y, text, color: '#d4a843' });
+        redrawCanvas();
+      }
+      isDrawingRef.current = false;
+    }
+    if (drawingTool === 'hline') {
+      // get price from chart coordinate
+      let label = '';
+      if (mainChartRef.current) {
+        try {
+          const price = mainChartRef.current.priceScale('right');
+          label = pos.y.toFixed(0);
+        } catch (_) {}
+      }
+      drawingsRef.current.push({ type: 'hline', y: pos.y, color: '#d4a843', dash: [6, 3], label });
+      redrawCanvas();
+      isDrawingRef.current = false;
+    }
+    if (drawingTool === 'vline') {
+      drawingsRef.current.push({ type: 'vline', x: pos.x, color: '#d4a843', dash: [6, 3] });
+      redrawCanvas();
+      isDrawingRef.current = false;
+    }
+  };
+
+  const handleDrawMouseMove = (e) => {
+    if (!isDrawingRef.current || !drawStartRef.current) return;
+    const pos = getCanvasPos(e);
+    const canvas = drawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    // Redraw existing + live preview
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawingsRef.current.forEach(d => renderDrawing(ctx, d));
+
+    ctx.strokeStyle = '#d4a843';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+
+    if (drawingTool === 'trendline') {
+      ctx.beginPath();
+      ctx.moveTo(drawStartRef.current.x, drawStartRef.current.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+    } else if (drawingTool === 'rect') {
+      ctx.strokeRect(drawStartRef.current.x, drawStartRef.current.y, pos.x - drawStartRef.current.x, pos.y - drawStartRef.current.y);
+    } else if (drawingTool === 'circle') {
+      const rx = Math.abs(pos.x - drawStartRef.current.x) / 2;
+      const ry = Math.abs(pos.y - drawStartRef.current.y) / 2;
+      const cx = (drawStartRef.current.x + pos.x) / 2;
+      const cy = (drawStartRef.current.y + pos.y) / 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.max(rx, 1), Math.max(ry, 1), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (drawingTool === 'freehand') {
+      freehandPointsRef.current.push(pos);
+      ctx.beginPath();
+      ctx.moveTo(freehandPointsRef.current[0].x, freehandPointsRef.current[0].y);
+      freehandPointsRef.current.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+    } else if (drawingTool === 'fib' || drawingTool === 'measure') {
+      renderDrawing(ctx, { type: drawingTool, x1: drawStartRef.current.x, y1: drawStartRef.current.y, x2: pos.x, y2: pos.y, color: '#d4a843' });
+    }
+  };
+
+  const handleDrawMouseUp = (e) => {
+    if (!isDrawingRef.current || !drawStartRef.current) return;
+    const pos = getCanvasPos(e);
+    isDrawingRef.current = false;
+
+    if (drawingTool === 'trendline') {
+      drawingsRef.current.push({ type: 'trendline', x1: drawStartRef.current.x, y1: drawStartRef.current.y, x2: pos.x, y2: pos.y, color: '#d4a843' });
+    } else if (drawingTool === 'rect') {
+      drawingsRef.current.push({ type: 'rect', x1: drawStartRef.current.x, y1: drawStartRef.current.y, x2: pos.x, y2: pos.y, color: '#d4a843' });
+    } else if (drawingTool === 'circle') {
+      drawingsRef.current.push({ type: 'circle', x1: drawStartRef.current.x, y1: drawStartRef.current.y, x2: pos.x, y2: pos.y, color: '#d4a843' });
+    } else if (drawingTool === 'freehand') {
+      drawingsRef.current.push({ type: 'freehand', points: [...freehandPointsRef.current], color: '#d4a843' });
+      freehandPointsRef.current = [];
+    } else if (drawingTool === 'fib') {
+      drawingsRef.current.push({ type: 'fib', x1: drawStartRef.current.x, y1: drawStartRef.current.y, x2: pos.x, y2: pos.y, color: '#d4a843' });
+    } else if (drawingTool === 'measure') {
+      drawingsRef.current.push({ type: 'measure', x1: drawStartRef.current.x, y1: drawStartRef.current.y, x2: pos.x, y2: pos.y, color: '#d4a843' });
+    }
+
+    drawStartRef.current = null;
+    redrawCanvas();
+  };
+
+  const clearDrawings = () => {
+    drawingsRef.current = [];
+    redrawCanvas();
+    setDrawingTool(null);
+  };
+
   // ── Handlers ──
   const handleSelect = (stock) => {
     setSelectedStock({ ...stock, market });
@@ -818,7 +1067,18 @@ export default function ChartBoard() {
           {selectedStock ? (
             <>
               {/* Main chart */}
-              <div ref={mainContainerRef} className="flex-1 w-full min-h-0" />
+              <div ref={mainContainerRef} className="flex-1 w-full min-h-0 relative">
+                {/* Drawing overlay canvas */}
+                <canvas
+                  ref={drawCanvasRef}
+                  className="absolute inset-0 z-10"
+                  style={{ pointerEvents: (drawingTool && drawingTool !== 'crosshair') ? 'auto' : 'none', cursor: drawingTool === 'crosshair' || !drawingTool ? 'default' : 'crosshair' }}
+                  onMouseDown={handleDrawMouseDown}
+                  onMouseMove={handleDrawMouseMove}
+                  onMouseUp={handleDrawMouseUp}
+                  onMouseLeave={() => { if (isDrawingRef.current) { isDrawingRef.current = false; redrawCanvas(); } }}
+                />
+              </div>
 
               {/* RSI sub-panel */}
               {subs.rsi.enabled && (
@@ -903,7 +1163,7 @@ export default function ChartBoard() {
         <div className="w-6 border-t border-[#1a2540] my-1" />
         <button
           title="مسح الرسومات"
-          onClick={() => setDrawingTool(null)}
+          onClick={clearDrawings}
           className="w-8 h-8 flex items-center justify-center rounded-lg text-[#475569] hover:text-[#ff4757] hover:bg-[#ff4757]/10 transition-all"
         >
           <Eraser className="w-3.5 h-3.5" />
