@@ -5,7 +5,10 @@ import { getQuote } from "@/components/api/marketDataClient";
 import {
   Search, Brain, RefreshCw, Loader2, BarChart3,
   ArrowUpRight, ArrowDownRight, ChevronDown, X,
-  Maximize2, Minimize2, Layers
+  Maximize2, Minimize2, Layers,
+  TrendingUp, TrendingDown, Minus, Crosshair,
+  Type, RulerIcon, PenLine, Eraser, Circle,
+  RectangleHorizontal, Hash, Activity
 } from "lucide-react";
 import {
   calcEMA, calcSMA, calcRSI, calcMACD, calcBollingerBands,
@@ -43,9 +46,14 @@ const US_STOCKS = [
 // ═══════════════════════════════════════════════════════════════
 const TIMEFRAMES = [
   { label: "1د", value: "1M", interval: "1min", limit: 100 },
+  { label: "2د", value: "2M", interval: "2min", limit: 100 },
+  { label: "3د", value: "3M", interval: "3min", limit: 100 },
   { label: "5د", value: "5M", interval: "5min", limit: 100 },
   { label: "15د", value: "15M", interval: "15min", limit: 100 },
+  { label: "30د", value: "30M", interval: "30min", limit: 150 },
   { label: "1س", value: "1H", interval: "60min", limit: 200 },
+  { label: "2س", value: "2H", interval: "120min", limit: 200 },
+  { label: "4س", value: "4H", interval: "240min", limit: 200 },
   { label: "يومي", value: "1D", interval: "daily", limit: 365 },
   { label: "أسبوعي", value: "1W", interval: "weekly", limit: 260 },
   { label: "شهري", value: "1MO", interval: "monthly", limit: 120 },
@@ -385,6 +393,7 @@ export default function ChartBoard() {
   const [loading, setLoading] = useState(false);
   const [currentBar, setCurrentBar] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [drawingTool, setDrawingTool] = useState(null);
 
   // Overlay indicators (rendered on main chart)
   const [overlays, setOverlays] = useState({
@@ -862,6 +871,43 @@ export default function ChartBoard() {
           <span className="flex-1" />
           <span className="text-[#475569]">DFA Pro · محلل الأسواق المالية المتقدم</span>
         </div>
+      </div>
+
+      {/* ── LEFT SIDEBAR: Drawing Tools & Info ── */}
+      <div className="w-11 shrink-0 bg-[#0d1420] border-r border-[#1a2540] flex flex-col items-center py-2 gap-1 overflow-y-auto">
+        {[
+          { icon: Crosshair, label: "تحديد", tool: "crosshair" },
+          { icon: TrendingUp, label: "خط اتجاه", tool: "trendline" },
+          { icon: Minus, label: "خط أفقي", tool: "hline" },
+          { icon: Activity, label: "خط عمودي", tool: "vline" },
+          { icon: PenLine, label: "رسم حر", tool: "freehand" },
+          { icon: RectangleHorizontal, label: "مستطيل", tool: "rect" },
+          { icon: Circle, label: "دائرة", tool: "circle" },
+          { icon: Type, label: "نص", tool: "text" },
+          { icon: Hash, label: "فيبوناتشي", tool: "fib" },
+          { icon: RulerIcon, label: "قياس", tool: "measure" },
+        ].map(({ icon: Icon, label, tool }) => (
+          <button
+            key={tool}
+            title={label}
+            onClick={() => setDrawingTool(prev => prev === tool ? null : tool)}
+            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+              drawingTool === tool
+                ? "bg-[#d4a843]/20 text-[#d4a843] border border-[#d4a843]/40"
+                : "text-[#475569] hover:text-white hover:bg-[#1a2540]"
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+          </button>
+        ))}
+        <div className="w-6 border-t border-[#1a2540] my-1" />
+        <button
+          title="مسح الرسومات"
+          onClick={() => setDrawingTool(null)}
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-[#475569] hover:text-[#ff4757] hover:bg-[#ff4757]/10 transition-all"
+        >
+          <Eraser className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   );
