@@ -1532,6 +1532,19 @@ export default function ChartBoard() {
     return () => clearInterval(iv);
   }, [ibkrState.connected]);
 
+  // ── Polygon connection health check ──
+  useEffect(() => {
+    if (!polygonState.connected) return;
+    const iv = setInterval(() => {
+      getPolygonStatus().then(s => {
+        if (!s.connected) setPolygonState(prev => ({ ...prev, connected: false, usePolygon: false }));
+      }).catch(() => {
+        setPolygonState(prev => ({ ...prev, connected: false, usePolygon: false }));
+      });
+    }, 30000);
+    return () => clearInterval(iv);
+  }, [polygonState.connected]);
+
   // ── Resolve symbol to IBKR conid ──
   const resolveConid = useCallback(async (symbol) => {
     if (ibkrState.conidCache[symbol]) return ibkrState.conidCache[symbol];
@@ -2718,7 +2731,7 @@ export default function ChartBoard() {
           <div className="flex-1" />
 
           {/* IBKR Connection */}
-          <button onClick={() => { setShowIbkr(!showIbkr); setShowAlpaca(false); }}
+          <button onClick={() => { setShowIbkr(!showIbkr); setShowAlpaca(false); setShowPolygon(false); }}
             className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
               ibkrState.connected
                 ? (showIbkr ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
