@@ -317,153 +317,6 @@ function IbkrConnectionPanel({ ibkrState, setIbkrState, onClose }) {
             const selectedAcct = acctList[0]?.id;
             setIbkrState(prev => ({ ...prev, selectedAccount: selectedAcct }));
             try {
-              const summary = await getAccountSummary(selectedAcct);
-              setAccountSummary(summary);
-            } catch {}
-            try {
-              const pos = await getPositions();
-              setPositions(Array.isArray(pos) ? pos : []);
-            } catch {}
-          }
-        } catch {}
-      }
-    } catch (err) {
-      setError('تعذر الاتصال بـ IB Gateway. تأكد من تشغيله على المنفذ ' + port);
-    }
-    setChecking(false);
-  };
-
-  const doDisconnect = async () => {
-    try { await disconnectFromGateway(); } catch {}
-    ibkrConfig.clearConfig();
-    setIbkrState({ connected: false, authenticated: false, accounts: [], selectedAccount: null, useIbkr: false, conidCache: {} });
-    setAccounts([]);
-    setAccountSummary(null);
-    setPositions([]);
-  };
-
-  const toggleDataSource = () => {
-    setIbkrState(prev => ({ ...prev, useIbkr: !prev.useIbkr }));
-  };
-
-  return (
-    <div className="absolute top-2 right-14 w-[320px] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden" dir="rtl">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#2a2e39] bg-[#1e222d]">
-        <div className="flex items-center gap-1.5">
-          <Zap className="w-4 h-4 text-[#ff9800]" />
-          <span className="text-xs font-bold text-[#ff9800]">Interactive Brokers</span>
-        </div>
-        <button onClick={onClose} className="p-1 hover:bg-[#2a2e39] rounded text-[#787b86] transition-colors"><X className="w-3.5 h-3.5" /></button>
-      </div>
-
-      <div className="p-3 space-y-3 max-h-[70vh] overflow-y-auto custom-scrollbar">
-        {/* Connection Status */}
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${ibkrState.connected ? 'bg-[#26a69a]/10 border-[#26a69a]/30' : 'bg-[#ef5350]/10 border-[#ef5350]/30'}`}>
-          {ibkrState.connected ? <Wifi className="w-4 h-4 text-[#26a69a]" /> : <WifiOff className="w-4 h-4 text-[#ef5350]" />}
-          <span className={`text-xs font-bold ${ibkrState.connected ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
-            {ibkrState.connected ? 'متصل بـ IB Gateway' : 'غير متصل'}
-          </span>
-        </div>
-
-        {/* Connection Settings */}
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <div className="flex-1 space-y-1">
-              <label className="text-[10px] text-[#787b86] font-bold">عنوان IP</label>
-              <input
-                value={host}
-                onChange={e => setHost(e.target.value)}
-                placeholder="127.0.0.1"
-                className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded px-3 py-1.5 text-[11px] text-[#d1d4dc] placeholder-[#434651] outline-none focus:border-[#ff9800]/50 transition-colors font-mono"
-                dir="ltr"
-              />
-            </div>
-            <div className="w-[90px] space-y-1">
-              <label className="text-[10px] text-[#787b86] font-bold">المنفذ</label>
-              <select
-                value={port}
-                onChange={e => setPort(Number(e.target.value))}
-                className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded px-2 py-1.5 text-[11px] text-[#d1d4dc] outline-none focus:border-[#ff9800]/50 transition-colors font-mono"
-              >
-                <option value={4001}>4001 حي</option>
-                <option value={4002}>4002 ورقي</option>
-                <option value={7496}>7496 TWS حي</option>
-                <option value={7497}>7497 TWS ورقي</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Connect / Disconnect buttons */}
-        {!ibkrState.connected ? (
-          <button onClick={doConnect} disabled={checking}
-            className="w-full py-2 text-[11px] font-bold text-white bg-[#ff9800] rounded-lg hover:bg-[#f57c00] disabled:opacity-50 transition-all flex items-center justify-center gap-2">
-            {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-            {checking ? 'جاري الاتصال...' : 'اتصل بـ IB Gateway'}
-          </button>
-        ) : (
-          <div className="space-y-2">
-            {/* Data source toggle */}
-            <div className="flex items-center justify-between bg-[#0c0e14] rounded-lg p-2.5 cursor-pointer" onClick={toggleDataSource}>
-              <span className="text-[11px] text-[#d1d4dc]">استخدام بيانات IBKR</span>
-              <div className={`w-9 h-[20px] rounded-full transition-all relative ${ibkrState.useIbkr ? 'bg-[#ff9800]' : 'bg-[#434651]'}`}>
-                <span className={`absolute top-[2px] w-[16px] h-[16px] bg-white rounded-full transition-all shadow-sm ${ibkrState.useIbkr ? 'right-[2px]' : 'left-[2px]'}`} />
-              </div>
-            </div>
-
-            {/* Account info */}
-            {accounts.length > 0 && (
-              <div className="space-y-1.5">
-                <div className="text-[10px] font-bold text-[#787b86]">الحسابات</div>
-                {accounts.map((acct, i) => (
-                  <div key={i} className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all ${
-                    ibkrState.selectedAccount === acct.id
-                      ? 'bg-[#ff9800]/10 border-[#ff9800]/30'
-                      : 'bg-[#0c0e14] border-[#2a2e39] hover:border-[#434651]'
-                  }`} onClick={() => setIbkrState(prev => ({ ...prev, selectedAccount: acct.id }))}>
-                    <span className="text-[11px] font-bold text-[#d1d4dc] font-mono">{acct.id}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Account summary */}
-            {accountSummary && (
-              <div className="space-y-0">
-                <div className="text-[10px] font-bold text-[#787b86] mb-1">ملخص الحساب</div>
-                {Object.entries(accountSummary).map(([tag, info], i) => (
-                  <div key={i} className="flex justify-between py-1 border-b border-[#2a2e39]/50">
-                    <span className="text-[10px] text-[#787b86]">{tag}</span>
-                    <span className="text-[10px] font-bold text-[#d1d4dc]">{info.currency} {Number(info.value).toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Positions */}
-            {positions.length > 0 && (
-              <div className="space-y-1">
-                <div className="text-[10px] font-bold text-[#787b86]">المراكز المفتوحة ({positions.length})</div>
-                <div className="max-h-[120px] overflow-y-auto custom-scrollbar space-y-0.5">
-                  {positions.map((pos, i) => (
-                    <div key={i} className="flex items-center justify-between px-2 py-1 rounded bg-[#0c0e14] text-[10px]">
-                      <div>
-                        <span className="font-bold text-[#d1d4dc]">{pos.contract?.symbol || '?'}</span>
-                        <span className="text-[#787b86] mr-1">×{pos.position}</span>
-                      </div>
-                      <span className="text-[#787b86] font-mono">{pos.avgCost?.toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <button onClick={doDisconnect}
-              className="w-full py-2 text-[11px] font-bold text-[#ef5350] border border-[#ef5350]/30 rounded-lg hover:bg-[#ef5350]/10 transition-all flex items-center justify-center gap-2">
-              <Unlink2 className="w-3.5 h-3.5" /> قطع الاتصال
-            </button>
-          </div>
-        )}
 
         {error && (
           <div className="flex items-start gap-2 p-2 rounded-lg bg-[#ef5350]/10 border border-[#ef5350]/20">
@@ -1258,9 +1111,11 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
                   <ChevronDown className={`w-3 h-3 transition-transform ${expanded === sec.sector ? "rotate-180" : ""}`} />
                   <span>{sec.sector}</span>
                 </button>
-                {(expanded === sec.sector || expanded === null) && sec.items.map(s => (
-                  <StockRow key={s.symbol + sec.sector} stock={s} market={market} isActive={selectedStock?.symbol === s.symbol} onSelect={onSelect} liveQuote={livePrices[s.symbol]} prevQuote={prevPrices[s.symbol]} />
-                ))}
+                {(expanded === sec.sector || expanded === null) && (
+                  sec.items.map(s => (
+                    <StockRow key={s.symbol + sec.sector} stock={s} market={market} isActive={selectedStock?.symbol === s.symbol} onSelect={onSelect} liveQuote={livePrices[s.symbol]} prevQuote={prevPrices[s.symbol]} />
+                  ))
+                )}
               </div>
             ))}
           </div>
@@ -1326,7 +1181,7 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
                 </div>
               </div>
             </div>
-            ))}
+          )}
 
           {/* Key stats */}
           <div className="space-y-0">
@@ -1356,6 +1211,20 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
 // MAIN CHART BOARD
 // ═══════════════════════════════════════════════════════════════
 export default function ChartBoard() {
+    // S3 Polygon state
+    const [showPolygonS3, setShowPolygonS3] = useState(false);
+    const [polygonS3Candles, setPolygonS3Candles] = useState([]);
+    const [polygonS3Loading, setPolygonS3Loading] = useState(false);
+    const [polygonS3Error, setPolygonS3Error] = useState('');
+
+    // إدارة وسيط S3 Polygon
+    const [showPolygonS3Manager, setShowPolygonS3Manager] = useState(false);
+    const [polygonS3Config, setPolygonS3Config] = useState({});
+
+    function savePolygonS3Config(cfg) {
+      localStorage.setItem('polygon_s3_config', JSON.stringify(cfg));
+      setPolygonS3Config(cfg);
+    }
   const [market, setMarket] = useState("saudi");
   const [selectedStock, setSelectedStock] = useState({ symbol: "2222", name: "أرامكو", market: "saudi" });
   const [timeframe, setTimeframe] = useState("1D");
@@ -2671,7 +2540,7 @@ export default function ChartBoard() {
                 }`}>
               {r.label}
             </button>
-          )}
+          ))}
           <div className="flex-1" />
 
           {/* Price + Quote (right side of row 1) */}
@@ -2951,74 +2820,8 @@ export default function ChartBoard() {
         handleSelectMarket={handleSelectMarket}
       />
     )}
-  </div>
-  );
-}
 
-// S3 Polygon state
-const [showPolygonS3, setShowPolygonS3] = useState(false);
-const [polygonS3Candles, setPolygonS3Candles] = useState([]);
-const [polygonS3Params, setPolygonS3Params] = useState({
-  accessKeyId: '',
-  secretAccessKey: '',
-  endpoint: '',
-  bucket: '',
-  symbol: '',
-  filePath: '',
-});
-const [polygonS3Loading, setPolygonS3Loading] = useState(false);
-const [polygonS3Error, setPolygonS3Error] = useState('');
 
-// إدارة وسيط S3 Polygon
-const [showPolygonS3Manager, setShowPolygonS3Manager] = useState(false);
-const [polygonS3Config, setPolygonS3Config] = useState(() => {
-  try {
-    return JSON.parse(localStorage.getItem('polygon_s3_config')) || {
-      accessKeyId: '',
-      secretAccessKey: '',
-      endpoint: '',
-      bucket: '',
-      enabled: false,
-    };
-  } catch { return { accessKeyId: '', secretAccessKey: '', endpoint: '', bucket: '', enabled: false }; }
-});
-
-function savePolygonS3Config(cfg) {
-  localStorage.setItem('polygon_s3_config', JSON.stringify(cfg));
-  setPolygonS3Config(cfg);
-}
-
-// ── Polygon connection health check ──
-useEffect(() => {
-  if (!showPolygonS3) return;
-  const iv = setInterval(() => {
-    getPolygonStatus().then(s => {
-      if (!s.connected) setPolygonState(prev => ({ ...prev, connected: false, usePolygon: false }));
-    }).catch(() => {
-      setPolygonState(prev => ({ ...prev, connected: false, usePolygon: false }));
-    });
-  }, 30000);
-  return () => clearInterval(iv);
-}, [showPolygonS3]);
-
-// ── Fetch Candles (IBKR / Alpaca / Polygon / Yahoo) ──
-useEffect(() => {
-  if (!selectedStock) return;
-  chartBuiltRef.current = false; // Force full chart build on first fetch
-  liveBarRef.current = { time: 0, open: 0, high: 0, low: 0, close: 0 };
-  fetchCandles();
-  const useRealtime = ibkrState.useIbkr || alpacaState.useAlpaca || polygonState.usePolygon;
-  const isIntra = isIntradayInterval(selectedTf?.interval);
-  // Live brokers: 30s intraday / 60s daily. Yahoo: 30s intraday / 5min daily
-  const refreshMs = useRealtime
-    ? (isIntra ? 10000 : 30000)
-    : (isIntra ? 30000 : 300000);
-  const iv = setInterval(fetchCandles, refreshMs);
-  return () => clearInterval(iv);
-}, [selectedStock, market, timeframe, selectedRange, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca, polygonState.connected, polygonState.usePolygon]);
-
-// ── Live candle tracking ref ──
-const liveBarRef = useRef({ time: 0, open: 0, high: 0, low: 0, close: 0 });
 
 // Smart update: if chart is already built, update series in-place (no flicker).
 // Falls back to full rebuild via setCandles() on first load or error.
