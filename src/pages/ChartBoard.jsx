@@ -423,7 +423,7 @@ export default function ChartBoard() {
       getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
     };
     fetchQuote();
-    const iv = setInterval(fetchQuote, 15000);
+    const iv = setInterval(fetchQuote, 3000);
     return () => clearInterval(iv);
   }, [selectedStock, market]);
 
@@ -431,7 +431,7 @@ export default function ChartBoard() {
   useEffect(() => {
     if (!selectedStock) return;
     fetchCandles(true);
-    const iv = setInterval(() => fetchCandles(false), 30000);
+    const iv = setInterval(() => fetchCandles(false), 5000);
     return () => clearInterval(iv);
   }, [selectedStock, market, timeframe]);
 
