@@ -2333,7 +2333,7 @@ export default function ChartBoard() {
     };
   }, [candles, chartType, overlays, subs]);
 
-  // ── Candle countdown timer (inside price label, like TradingView) ──
+  // ── Candle countdown timer (below price label, like TradingView) ──
   useEffect(() => {
     const container = mainContainerRef.current;
     if (!container || !candles?.length) return;
@@ -2342,13 +2342,30 @@ export default function ChartBoard() {
     const isIntra = isIntradayInterval(selectedTf?.interval);
     if (!isIntra) return;
 
-    // Create the countdown element — styled to look like part of the price label
+    // Only show during live data source activity
+    const hasLiveSource = (alpacaState.connected && alpacaState.useAlpaca)
+      || (polygonState.connected && polygonState.usePolygon)
+      || (ibkrState.connected && ibkrState.useIbkr);
+
+    // Helper: check if US market is open (Mon-Fri 9:30-16:00 ET)
+    const isMarketOpen = () => {
+      const now = new Date();
+      const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const day = et.getDay(); // 0=Sun, 6=Sat
+      if (day === 0 || day === 6) return false;
+      const mins = et.getHours() * 60 + et.getMinutes();
+      return mins >= 570 && mins < 960; // 9:30=570, 16:00=960
+    };
+
+    if (!hasLiveSource || !isMarketOpen()) return;
+
+    // Create the countdown element — positioned below the price label
     const el = document.createElement('div');
     el.style.cssText = `
       position: absolute; right: 0; z-index: 15; pointer-events: none;
-      font-family: monospace, 'Tajawal'; font-size: 11px; font-weight: 700;
-      text-align: center; min-width: 55px; padding: 2px 5px;
-      color: #fff; line-height: 1;
+      font-family: monospace, 'Tajawal'; font-size: 9px; font-weight: 700;
+      text-align: center; min-width: 55px; padding: 1px 5px;
+      color: #ffffffcc; line-height: 1; border-radius: 0 0 3px 3px;
     `;
     container.style.position = 'relative';
     container.appendChild(el);
@@ -2357,6 +2374,13 @@ export default function ChartBoard() {
       const chart = mainChartRef.current;
       const series = mainSeriesRef.current;
       if (!chart || !series) return;
+
+      // Stop if market closed mid-session
+      if (!isMarketOpen()) {
+        el.style.display = 'none';
+        return;
+      }
+      el.style.display = '';
 
       const nowSec = Math.floor(Date.now() / 1000);
       const bucketStart = Math.floor(nowSec / bucket) * bucket;
@@ -2377,7 +2401,7 @@ export default function ChartBoard() {
         text = `00:${String(remaining).padStart(2, '0')}`;
       }
 
-      // Get price coordinate from last candle to position inside price label
+      // Get price coordinate from last candle to position BELOW price label
       const lastCandle = candles[candles.length - 1];
       const lastPrice = liveBarRef.current?.close || lastCandle?.close;
       if (!lastPrice) return;
@@ -2385,8 +2409,8 @@ export default function ChartBoard() {
       try {
         const priceY = series.priceToCoordinate(lastPrice);
         if (priceY != null) {
-          // Position exactly aligned with the price label (inside its box)
-          el.style.top = `${Math.round(priceY - 1)}px`;
+          // Position below the price label box (+13px down from center)
+          el.style.top = `${Math.round(priceY + 13)}px`;
         }
       } catch {}
 
@@ -2404,7 +2428,7 @@ export default function ChartBoard() {
       clearInterval(iv);
       try { container.removeChild(el); } catch {}
     };
-  }, [candles, selectedTf]);
+  }, [candles, selectedTf, alpacaState.connected, alpacaState.useAlpaca, polygonState.connected, polygonState.usePolygon, ibkrState.connected, ibkrState.useIbkr]);
 
   // ── Separate drawings effect (does NOT rebuild the chart) ──
   useEffect(() => {
