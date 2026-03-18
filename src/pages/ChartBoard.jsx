@@ -35,6 +35,19 @@ import {
   parseAlpacaTick,
 } from "@/components/api/alpacaClient";
 import {
+  polygonConfig,
+  connectPolygon,
+  disconnectPolygon,
+  getPolygonStatus,
+  getPolygonSnapshot,
+  getPolygonBars,
+  searchPolygonTicker,
+  subscribePolygonQuotes,
+  parsePolygonQuote,
+  parsePolygonBars,
+  parsePolygonTick,
+} from "@/components/api/polygonClient";
+import {
   Search, Brain, RefreshCw, Loader2, BarChart3,
   ArrowUpRight, ArrowDownRight, ChevronDown, ChevronUp, X,
   Maximize2, Minimize2, Layers, Settings, TrendingUp,
@@ -667,6 +680,154 @@ function AlpacaConnectionPanel({ alpacaState, setAlpacaState, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// POLYGON.IO CONNECTION PANEL
+// ═══════════════════════════════════════════════════════════════
+function PolygonConnectionPanel({ polygonState, setPolygonState, onClose }) {
+  const savedConfig = polygonConfig.getConfig();
+  const [apiKey, setApiKey] = useState(savedConfig?.apiKey || '');
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState('');
+  const [marketStatus, setMarketStatus] = useState(null);
+
+  const doConnect = async () => {
+    setChecking(true);
+    setError('');
+    try {
+      const result = await connectPolygon(apiKey);
+      if (result.connected) {
+        polygonConfig.saveConfig({ apiKey, connected: true });
+        setPolygonState(prev => ({ ...prev, connected: true, usePolygon: true }));
+        if (result.market) setMarketStatus(result.market);
+      }
+    } catch (err) {
+      setError('مفتاح API غير صحيح أو فشل الاتصال');
+    }
+    setChecking(false);
+  };
+
+  const doDisconnect = async () => {
+    try { await disconnectPolygon(); } catch {}
+    polygonConfig.clearConfig();
+    setPolygonState({ connected: false, usePolygon: false });
+    setMarketStatus(null);
+  };
+
+  const toggleDataSource = () => {
+    setPolygonState(prev => ({ ...prev, usePolygon: !prev.usePolygon }));
+  };
+
+  return (
+    <div className="absolute top-2 right-14 w-[320px] bg-[#131722]/98 border border-[#2a2e39] rounded-lg shadow-2xl z-30 backdrop-blur-xl overflow-hidden" dir="rtl">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[#2a2e39] bg-[#1e222d]">
+        <div className="flex items-center gap-1.5">
+          <Activity className="w-4 h-4 text-[#7c3aed]" />
+          <span className="text-xs font-bold text-[#7c3aed]">Polygon.io</span>
+        </div>
+        <button onClick={onClose} className="p-1 hover:bg-[#2a2e39] rounded text-[#787b86] transition-colors"><X className="w-3.5 h-3.5" /></button>
+      </div>
+
+      <div className="p-3 space-y-3 max-h-[70vh] overflow-y-auto custom-scrollbar">
+        {/* Connection Status */}
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${polygonState.connected ? 'bg-[#26a69a]/10 border-[#26a69a]/30' : 'bg-[#ef5350]/10 border-[#ef5350]/30'}`}>
+          {polygonState.connected ? <Wifi className="w-4 h-4 text-[#26a69a]" /> : <WifiOff className="w-4 h-4 text-[#ef5350]" />}
+          <span className={`text-xs font-bold ${polygonState.connected ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+            {polygonState.connected ? 'متصل' : 'غير متصل'}
+          </span>
+        </div>
+
+        {/* API Key */}
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <label className="text-[10px] text-[#787b86] font-bold">API Key</label>
+            <input
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="أدخل مفتاح Polygon.io..."
+              className="w-full bg-[#0c0e14] border border-[#2a2e39] rounded px-3 py-1.5 text-[11px] text-[#d1d4dc] placeholder-[#434651] outline-none focus:border-[#7c3aed]/50 transition-colors font-mono"
+              dir="ltr"
+              autoComplete="off"
+            />
+          </div>
+        </div>
+
+        {/* Connect / Disconnect */}
+        {!polygonState.connected ? (
+          <button onClick={doConnect} disabled={checking || !apiKey}
+            className="w-full py-2 text-[11px] font-bold text-white bg-[#7c3aed] rounded-lg hover:bg-[#6d28d9] disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+            {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+            {checking ? 'جاري الاتصال...' : 'اتصل بـ Polygon.io'}
+          </button>
+        ) : (
+          <div className="space-y-2">
+            {/* Data source toggle */}
+            <div className="flex items-center justify-between bg-[#0c0e14] rounded-lg p-2.5 cursor-pointer" onClick={toggleDataSource}>
+              <span className="text-[11px] text-[#d1d4dc]">استخدام بيانات Polygon</span>
+              <div className={`w-9 h-[20px] rounded-full transition-all relative ${polygonState.usePolygon ? 'bg-[#7c3aed]' : 'bg-[#434651]'}`}>
+                <span className={`absolute top-[2px] w-[16px] h-[16px] bg-white rounded-full transition-all shadow-sm ${polygonState.usePolygon ? 'right-[2px]' : 'left-[2px]'}`} />
+              </div>
+            </div>
+
+            {/* Market Status */}
+            {marketStatus && (
+              <div className="space-y-0">
+                <div className="text-[10px] font-bold text-[#787b86] mb-1">حالة السوق</div>
+                <div className="flex justify-between py-1 border-b border-[#2a2e39]/50">
+                  <span className="text-[10px] text-[#787b86]">السوق</span>
+                  <span className={`text-[10px] font-bold ${marketStatus.market === 'open' ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+                    {marketStatus.market === 'open' ? 'مفتوح' : 'مغلق'}
+                  </span>
+                </div>
+                {marketStatus.serverTime && (
+                  <div className="flex justify-between py-1 border-b border-[#2a2e39]/50">
+                    <span className="text-[10px] text-[#787b86]">وقت الخادم</span>
+                    <span className="text-[10px] font-bold text-[#d1d4dc] font-mono">{new Date(marketStatus.serverTime).toLocaleTimeString('ar-SA')}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Features */}
+            <div className="bg-[#0c0e14] rounded-lg p-2.5 space-y-1 border border-[#2a2e39]/50">
+              <p className="text-[10px] font-bold text-[#7c3aed]">المميزات:</p>
+              <div className="text-[9px] text-[#787b86] space-y-0.5">
+                <div className="flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5 text-[#26a69a]" /> شموع بالثواني (حقيقية)</div>
+                <div className="flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5 text-[#26a69a]" /> بيانات لحظية عبر WebSocket</div>
+                <div className="flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5 text-[#26a69a]" /> سلاسل الخيارات (Options)</div>
+                <div className="flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5 text-[#26a69a]" /> بيانات جميع البورصات (SIP)</div>
+              </div>
+            </div>
+
+            <button onClick={doDisconnect}
+              className="w-full py-2 text-[11px] font-bold text-[#ef5350] border border-[#ef5350]/30 rounded-lg hover:bg-[#ef5350]/10 transition-all flex items-center justify-center gap-2">
+              <Unlink2 className="w-3.5 h-3.5" /> قطع الاتصال
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 p-2 rounded-lg bg-[#ef5350]/10 border border-[#ef5350]/20">
+            <AlertCircle className="w-3.5 h-3.5 text-[#ef5350] shrink-0 mt-0.5" />
+            <p className="text-[10px] text-[#ef5350] leading-relaxed">{error}</p>
+          </div>
+        )}
+
+        {/* Instructions */}
+        <div className="bg-[#0c0e14] rounded-lg p-2.5 space-y-1.5 border border-[#2a2e39]/50">
+          <p className="text-[10px] font-bold text-[#787b86]">خطوات الإعداد:</p>
+          <ol className="text-[9px] text-[#787b86] space-y-1 list-decimal pr-4 leading-relaxed">
+            <li>سجّل في <span className="text-[#7c3aed] font-bold">polygon.io</span></li>
+            <li>اذهب إلى <span className="text-[#7c3aed] font-bold">Dashboard → API Keys</span></li>
+            <li>انسخ مفتاح API هنا</li>
+            <li>الخطة المجانية: بيانات مؤخرة 15 دقيقة</li>
+            <li>Starter ($29/شهر) = بيانات لحظية + ثواني</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // AI ANALYSIS PANEL
 // ═══════════════════════════════════════════════════════════════
 function AiPanel({ symbol, market, candles, onClose }) {
@@ -1233,6 +1394,11 @@ export default function ChartBoard() {
     useAlpaca: false,
     accountId: null,
   });
+  const [showPolygon, setShowPolygon] = useState(false);
+  const [polygonState, setPolygonState] = useState({
+    connected: false,
+    usePolygon: false,
+  });
 
   // Overlays
   const [overlays, setOverlays] = useState({
@@ -1276,7 +1442,7 @@ export default function ChartBoard() {
 
   const selectedTf = useMemo(() => INTERVALS.find(t => t.value === timeframe) || INTERVALS.find(t => t.value === '1D'), [timeframe]);
 
-  const usingBroker = useMemo(() => (ibkrState.connected && ibkrState.useIbkr) || (alpacaState.connected && alpacaState.useAlpaca), [ibkrState, alpacaState]);
+  const usingBroker = useMemo(() => (ibkrState.connected && ibkrState.useIbkr) || (alpacaState.connected && alpacaState.useAlpaca) || (polygonState.connected && polygonState.usePolygon), [ibkrState, alpacaState, polygonState]);
 
   const toggleFavorite = useCallback((value) => {
     setIntervalFavorites(prev => {
@@ -1327,6 +1493,25 @@ export default function ChartBoard() {
               .then(r => {
                 if (r.connected) {
                   setAlpacaState(prev => ({ ...prev, connected: true, useAlpaca: true }));
+                }
+              })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+    // Init Polygon from saved config - auto-reconnect if needed
+    const polygonSaved = polygonConfig.getConfig();
+    if (polygonSaved?.apiKey) {
+      getPolygonStatus()
+        .then(status => {
+          if (status.connected) {
+            setPolygonState(prev => ({ ...prev, connected: true, usePolygon: true }));
+          } else {
+            connectPolygon(polygonSaved.apiKey)
+              .then(r => {
+                if (r.connected) {
+                  setPolygonState(prev => ({ ...prev, connected: true, usePolygon: true }));
                 }
               })
               .catch(() => {});
@@ -1480,6 +1665,67 @@ export default function ChartBoard() {
         clearInterval(iv);
         if (sseSub) sseSub.close();
       };
+    } else if (polygonState.connected && polygonState.usePolygon) {
+      // Polygon real-time quote via snapshot polling + WebSocket SSE
+      let cancelled = false;
+      let sseSub = null;
+
+      const pollSnapshot = async () => {
+        if (cancelled) return;
+        try {
+          const snap = await getPolygonSnapshot(selectedStock.symbol);
+          if (snap && !cancelled) {
+            const q = parsePolygonQuote(snap);
+            if (q) setQuote(q);
+
+            const series = mainSeriesRef.current;
+            const price = q.price;
+            if (series && price) {
+              const tfInterval = selectedTf?.interval;
+              const isIntra = isIntradayInterval(tfInterval);
+              const bucket = BUCKET_SECONDS[tfInterval] || 60;
+              const nowUnix = Math.floor(Date.now() / 1000);
+              const candleTime = isIntra
+                ? Math.floor(nowUnix / bucket) * bucket
+                : new Date().toISOString().substring(0, 10);
+
+              const lb = liveBarRef.current;
+              try {
+                if (chartTypeRef.current === 'line' || chartTypeRef.current === 'area') {
+                  series.update({ time: candleTime, value: price });
+                } else {
+                  if (lb.time === candleTime) {
+                    lb.high = Math.max(lb.high, price);
+                    lb.low = Math.min(lb.low, price);
+                    lb.close = price;
+                  } else {
+                    lb.time = candleTime;
+                    lb.open = price;
+                    lb.high = price;
+                    lb.low = price;
+                    lb.close = price;
+                  }
+                  series.update({ time: candleTime, open: lb.open, high: lb.high, low: lb.low, close: lb.close });
+                }
+              } catch { /* time ordering */ }
+            }
+          }
+        } catch {}
+      };
+
+      pollSnapshot();
+      const iv = setInterval(pollSnapshot, 5000);
+
+      sseSub = subscribePolygonQuotes(selectedStock.symbol, (tick) => {
+        const q = parsePolygonTick(tick);
+        if (q) setQuote(q);
+      });
+
+      return () => {
+        cancelled = true;
+        clearInterval(iv);
+        if (sseSub) sseSub.close();
+      };
     } else {
       // Standard Yahoo quote
       const fetchQ = () => getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
@@ -1487,15 +1733,15 @@ export default function ChartBoard() {
       const iv = setInterval(fetchQ, 5000);
       return () => clearInterval(iv);
     }
-  }, [selectedStock, market, timeframe, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
+  }, [selectedStock, market, timeframe, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca, polygonState.connected, polygonState.usePolygon]);
 
-  // ── Fetch Candles (IBKR / Alpaca / Yahoo) ──
+  // ── Fetch Candles (IBKR / Alpaca / Polygon / Yahoo) ──
   useEffect(() => {
     if (!selectedStock) return;
     chartBuiltRef.current = false; // Force full chart build on first fetch
     liveBarRef.current = { time: 0, open: 0, high: 0, low: 0, close: 0 };
     fetchCandles();
-    const useRealtime = ibkrState.useIbkr || alpacaState.useAlpaca;
+    const useRealtime = ibkrState.useIbkr || alpacaState.useAlpaca || polygonState.usePolygon;
     const isIntra = isIntradayInterval(selectedTf?.interval);
     // Live brokers: 30s intraday / 60s daily. Yahoo: 30s intraday / 5min daily
     const refreshMs = useRealtime
@@ -1503,7 +1749,7 @@ export default function ChartBoard() {
       : (isIntra ? 30000 : 300000);
     const iv = setInterval(fetchCandles, refreshMs);
     return () => clearInterval(iv);
-  }, [selectedStock, market, timeframe, selectedRange, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca]);
+  }, [selectedStock, market, timeframe, selectedRange, ibkrState.connected, ibkrState.useIbkr, alpacaState.connected, alpacaState.useAlpaca, polygonState.connected, polygonState.usePolygon]);
 
   // ── Live candle tracking ref ──
   const liveBarRef = useRef({ time: 0, open: 0, high: 0, low: 0, close: 0 });
@@ -1598,6 +1844,39 @@ export default function ChartBoard() {
         }
       } catch (err) {
         console.error('[Alpaca] History error:', err);
+      }
+      setLoading(false);
+      return;
+    }
+
+    // ── Polygon candles ──
+    if (polygonState.connected && polygonState.usePolygon) {
+      try {
+        const bars = await getPolygonBars(selectedStock.symbol, selectedTf.interval, selectedRange || '');
+        const polygonCandles = parsePolygonBars(bars);
+
+        if (polygonCandles.length > 0) {
+          const isIntraday = isIntradayInterval(selectedTf.interval);
+          const normalized = polygonCandles.map(c => {
+            let t = c.time;
+            if (isIntraday) {
+              t = typeof t === 'string' ? Math.floor(new Date(t).getTime() / 1000) : t;
+            } else {
+              t = typeof t === 'string' ? t.substring(0, 10) : new Date(t * 1000).toISOString().substring(0, 10);
+            }
+            return { time: t, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 };
+          });
+          const seen = new Set();
+          const processed = normalized
+            .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
+            .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
+          if (processed.length > 0) {
+            smartSetCandles(processed);
+            setCurrentBar(processed[processed.length - 1]);
+          }
+        }
+      } catch (err) {
+        console.error('[Polygon] History error:', err);
       }
       setLoading(false);
       return;
@@ -2207,7 +2486,7 @@ export default function ChartBoard() {
       const key = e.key.toLowerCase();
 
       if (e.ctrlKey && key === 'z') { e.preventDefault(); setDrawings(prev => prev.slice(0, -1)); }
-      else if (key === 'escape') { setActiveTool('cursor'); setShowChartTypeMenu(false); setShowIndicators(false); setShowAI(false); setShowIbkr(false); setShowAlpaca(false); pendingClickRef.current = null; }
+      else if (key === 'escape') { setActiveTool('cursor'); setShowChartTypeMenu(false); setShowIndicators(false); setShowAI(false); setShowIbkr(false); setShowAlpaca(false); setShowPolygon(false); pendingClickRef.current = null; }
       else if (key === 'h') setActiveTool('horizontal');
       else if (key === 'f') setActiveTool('fib');
       else if (key === 't') setActiveTool('trendline');
@@ -2451,7 +2730,7 @@ export default function ChartBoard() {
           </button>
 
           {/* Alpaca Connection */}
-          <button onClick={() => { setShowAlpaca(!showAlpaca); setShowIbkr(false); }}
+          <button onClick={() => { setShowAlpaca(!showAlpaca); setShowIbkr(false); setShowPolygon(false); }}
             className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
               alpacaState.connected
                 ? (showAlpaca ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
@@ -2460,6 +2739,18 @@ export default function ChartBoard() {
             {alpacaState.connected ? <Wifi className="w-3.5 h-3.5" /> : <Key className="w-3.5 h-3.5" />}
             <span>Alpaca</span>
             {alpacaState.useAlpaca && <span className="w-1.5 h-1.5 rounded-full bg-[#ffeb3b] animate-pulse" />}
+          </button>
+
+          {/* Polygon Connection */}
+          <button onClick={() => { setShowPolygon(!showPolygon); setShowIbkr(false); setShowAlpaca(false); }}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-all shrink-0 ${
+              polygonState.connected
+                ? (showPolygon ? "bg-[#26a69a]/20 text-[#26a69a]" : "text-[#26a69a] hover:bg-[#26a69a]/10")
+                : (showPolygon ? "bg-[#7c3aed]/20 text-[#7c3aed]" : "text-[#787b86] hover:text-[#7c3aed]")
+            }`}>
+            {polygonState.connected ? <Wifi className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}
+            <span>Polygon</span>
+            {polygonState.usePolygon && <span className="w-1.5 h-1.5 rounded-full bg-[#7c3aed] animate-pulse" />}
           </button>
 
           <div className="w-px h-4 bg-[#2a2e39] mx-0.5 shrink-0" />
@@ -2516,6 +2807,10 @@ export default function ChartBoard() {
 
           {showAlpaca && (
             <AlpacaConnectionPanel alpacaState={alpacaState} setAlpacaState={setAlpacaState} onClose={() => setShowAlpaca(false)} />
+          )}
+
+          {showPolygon && (
+            <PolygonConnectionPanel polygonState={polygonState} setPolygonState={setPolygonState} onClose={() => setShowPolygon(false)} />
           )}
 
           {/* Active drawing tool indicator */}

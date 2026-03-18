@@ -19,15 +19,22 @@ import {
   getConnectionStatus,
   ibkrConfig,
 } from '@/components/api/ibkrClient';
+import {
+  connectPolygon,
+  disconnectPolygon,
+  getPolygonStatus,
+  polygonConfig,
+} from '@/components/api/polygonClient';
 
 const BrokerContext = createContext(null);
 
 export function BrokerProvider({ children }) {
   const [broker, setBrokerState] = useState({
-    active: null,        // 'alpaca' | 'ibkr' | null
+    active: null,        // 'alpaca' | 'ibkr' | 'polygon' | null
     alpacaConnected: false,
     alpacaPaper: true,
     ibkrConnected: false,
+    polygonConnected: false,
     loading: true,
   });
 
@@ -38,10 +45,16 @@ export function BrokerProvider({ children }) {
   }, [broker.ibkrConnected]);
 
   const setIbkrActive = useCallback((connected) => {
-    setBrokerState(prev => ({ ...prev, ibkrConnected: connected, active: connected ? 'ibkr' : (prev.alpacaConnected ? 'alpaca' : null), loading: false }));
+    setBrokerState(prev => ({ ...prev, ibkrConnected: connected, active: connected ? 'ibkr' : (prev.alpacaConnected ? 'alpaca' : (prev.polygonConnected ? 'polygon' : null)), loading: false }));
     if (connected) { if (!broker.alpacaConnected) setBroker('ibkr'); }
-    else if (!broker.alpacaConnected) clearBroker();
-  }, [broker.alpacaConnected]);
+    else if (!broker.alpacaConnected && !broker.polygonConnected) clearBroker();
+  }, [broker.alpacaConnected, broker.polygonConnected]);
+
+  const setPolygonActive = useCallback((connected) => {
+    setBrokerState(prev => ({ ...prev, polygonConnected: connected, active: connected ? 'polygon' : (prev.alpacaConnected ? 'alpaca' : (prev.ibkrConnected ? 'ibkr' : null)), loading: false }));
+    if (connected) setBroker('polygon');
+    else if (!broker.alpacaConnected && !broker.ibkrConnected) clearBroker();
+  }, [broker.alpacaConnected, broker.ibkrConnected]);
 
   // ── Auto-connect on mount ──
   useEffect(() => {
@@ -87,7 +100,35 @@ export function BrokerProvider({ children }) {
       } catch { /* not connected */ }
     };
 
-    Promise.all([tryAlpaca(), tryIbkr()]);
+    const tryPolygon = async () => {
+      try {
+        const status = await getPolygonStatus();
+        if (cancelled) return;
+        if (status.connected) {
+          setBrokerState(prev => {
+            if (!prev.active) setBroker('polygon');
+            return { ...prev, polygonConnected: true, active: prev.active || 'polygon', loading: false };
+          });
+          return;
+        }
+      } catch { /* not connected */ }
+
+      const saved = polygonConfig.getConfig();
+      if (saved?.apiKey) {
+        try {
+          const r = await connectPolygon(saved.apiKey);
+          if (cancelled) return;
+          if (r.connected) {
+            setBrokerState(prev => {
+              if (!prev.active) setBroker('polygon');
+              return { ...prev, polygonConnected: true, active: prev.active || 'polygon', loading: false };
+            });
+          }
+        } catch { /* ignore */ }
+      }
+    };
+
+    Promise.all([tryAlpaca(), tryIbkr(), tryPolygon()]);
     return () => { cancelled = true; };
   }, []);
 
@@ -116,13 +157,19 @@ export function BrokerProvider({ children }) {
   }, [broker.alpacaConnected, broker.ibkrConnected]);
 
   return (
-    <BrokerContext.Provider value={{ broker, setAlpacaActive, setIbkrActive }}>
+    <BrokerContext.Provider value={{ broker, setAlpacaActive, setIbkrActive, setPolygonActive }}>
       {/* Live data indicator bar */}
       {broker.active && !broker.loading && (
-        <div className={`fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-2 py-1 text-[11px] font-bold ${broker.active === 'alpaca' ? 'bg-[#ffeb3b]/10 border-t border-[#ffeb3b]/20 text-[#ffeb3b]' : 'bg-[#ff9800]/10 border-t border-[#ff9800]/20 text-[#ff9800]'}`}>
+        <div className={`fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-2 py-1 text-[11px] font-bold ${
+          broker.active === 'alpaca' ? 'bg-[#ffeb3b]/10 border-t border-[#ffeb3b]/20 text-[#ffeb3b]'
+          : broker.active === 'polygon' ? 'bg-[#7c3aed]/10 border-t border-[#7c3aed]/20 text-[#7c3aed]'
+          : 'bg-[#ff9800]/10 border-t border-[#ff9800]/20 text-[#ff9800]'
+        }`}>
           <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
           {broker.active === 'alpaca'
             ? `Alpaca ${broker.alpacaPaper ? '(ورقي)' : '(حقيقي)'} — بيانات لحظية نشطة`
+            : broker.active === 'polygon'
+            ? 'Polygon.io — بيانات لحظية نشطة'
             : 'IBKR — بيانات لحظية نشطة'}
         </div>
       )}
@@ -133,6 +180,6 @@ export function BrokerProvider({ children }) {
 
 export const useBroker = () => {
   const ctx = useContext(BrokerContext);
-  if (!ctx) return { broker: { active: null, alpacaConnected: false, ibkrConnected: false, loading: false } };
+  if (!ctx) return { broker: { active: null, alpacaConnected: false, ibkrConnected: false, polygonConnected: false, loading: false } };
   return ctx;
 };

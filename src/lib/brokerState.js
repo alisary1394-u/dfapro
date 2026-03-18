@@ -3,7 +3,7 @@
  * This is shared across ALL imports — marketDataClient reads it to route requests.
  */
 
-let _activeBroker = null; // 'alpaca' | 'ibkr' | null
+let _activeBroker = null; // 'alpaca' | 'ibkr' | 'polygon' | null
 
 export const setBroker = (broker) => { _activeBroker = broker; };
 export const clearBroker = () => { _activeBroker = null; };

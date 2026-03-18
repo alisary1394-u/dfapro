@@ -1525,6 +1525,7 @@ app.post('/api/ibkr/unsubscribe-all', (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 
 import * as alpacaApi from './alpacaApi.js';
+import * as polygonApi from './polygonApi.js';
 
 // Alpaca Connect
 app.post('/api/alpaca/connect', async (req, res) => {
@@ -1762,6 +1763,187 @@ app.get('/api/alpaca/stream/:symbol', (req, res) => {
   }, 15000);
 
   const sub = alpacaApi.subscribeQuotes(symbol, (tick) => {
+    try { res.write(`data: ${JSON.stringify(tick)}\n\n`); } catch {}
+  });
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sub.unsubscribe();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// POLYGON.IO API ROUTES
+// ═══════════════════════════════════════════════════════════════
+
+// Polygon Connect
+app.post('/api/polygon/connect', async (req, res) => {
+  try {
+    const { apiKey } = req.body || {};
+    if (!apiKey) {
+      return res.status(400).json({ error: 'API Key required' });
+    }
+    polygonApi.connect(apiKey);
+    // Validate by fetching market status
+    const status = await polygonApi.getMarketStatus();
+    res.json({ connected: true, market: status });
+  } catch (err) {
+    polygonApi.disconnect();
+    res.status(401).json({ error: 'Invalid API key or connection failed', details: err.message, connected: false });
+  }
+});
+
+// Polygon Disconnect
+app.post('/api/polygon/disconnect', (req, res) => {
+  polygonApi.disconnect();
+  res.json({ connected: false });
+});
+
+// Polygon Status
+app.get('/api/polygon/status', (req, res) => {
+  res.json(polygonApi.getStatus());
+});
+
+// Polygon Snapshot
+app.get('/api/polygon/snapshot/:symbol', async (req, res) => {
+  try {
+    const data = await polygonApi.getSnapshot(req.params.symbol);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Snapshot failed', details: err.message });
+  }
+});
+
+// Polygon Historical Bars
+app.get('/api/polygon/bars/:symbol', async (req, res) => {
+  try {
+    const { interval = 'daily', range = '' } = req.query;
+    const data = await polygonApi.getBars(req.params.symbol, interval, range);
+
+    // Append current bar from snapshot so chart shows live price
+    try {
+      const snap = await polygonApi.getSnapshot(req.params.symbol);
+      const ticker = snap?.ticker;
+      if (ticker && Array.isArray(data)) {
+        const price = ticker.lastTrade?.p || ticker.day?.c || 0;
+        const day = ticker.day || {};
+        if (price) {
+          data.push({
+            time: new Date().toISOString(),
+            open:  day.o || price,
+            high:  day.h || price,
+            low:   day.l || price,
+            close: price,
+            volume: day.v || 0,
+            _live: true,
+          });
+        }
+      }
+    } catch { /* snapshot optional */ }
+
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Historical data failed', details: err.message });
+  }
+});
+
+// Polygon Ticker Search
+app.get('/api/polygon/search', async (req, res) => {
+  try {
+    const { q = '', limit = 50 } = req.query;
+    const results = await polygonApi.searchTickers(q, Number(limit || 50));
+    res.json(results);
+  } catch (err) {
+    res.status(502).json({ error: 'Search failed', details: err.message });
+  }
+});
+
+// Polygon Ticker Details
+app.get('/api/polygon/ticker/:symbol', async (req, res) => {
+  try {
+    const data = await polygonApi.getTickerDetails(req.params.symbol);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Ticker details failed', details: err.message });
+  }
+});
+
+// Polygon Movers (gainers/losers)
+app.get('/api/polygon/movers', async (req, res) => {
+  try {
+    const { direction = 'gainers' } = req.query;
+    const data = await polygonApi.getMovers(direction);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Movers failed', details: err.message });
+  }
+});
+
+// Polygon Previous Day
+app.get('/api/polygon/prev/:symbol', async (req, res) => {
+  try {
+    const data = await polygonApi.getPrevDay(req.params.symbol);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Previous day failed', details: err.message });
+  }
+});
+
+// Polygon Options Chain
+app.get('/api/polygon/options/:symbol', async (req, res) => {
+  try {
+    const { expiry = '' } = req.query;
+    const data = await polygonApi.getOptionsChain(req.params.symbol, expiry);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Options chain failed', details: err.message });
+  }
+});
+
+// Polygon Options Expirations
+app.get('/api/polygon/options-expirations/:symbol', async (req, res) => {
+  try {
+    const data = await polygonApi.getOptionsExpirations(req.params.symbol);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Options expirations failed', details: err.message });
+  }
+});
+
+// Polygon Market Status
+app.get('/api/polygon/market-status', async (req, res) => {
+  try {
+    const data = await polygonApi.getMarketStatus();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Market status failed', details: err.message });
+  }
+});
+
+// Polygon SSE Stream
+app.get('/api/polygon/stream/:symbol', (req, res) => {
+  if (!polygonApi.isConnected()) {
+    return res.status(502).json({ error: 'Not connected to Polygon' });
+  }
+
+  const symbol = req.params.symbol;
+
+  req.socket.setNoDelay(true);
+  req.socket.setTimeout(0);
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+  res.write(': connected\n\n');
+
+  const heartbeat = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
+  }, 15000);
+
+  const sub = polygonApi.subscribeQuotes(symbol, (tick) => {
     try { res.write(`data: ${JSON.stringify(tick)}\n\n`); } catch {}
   });
 

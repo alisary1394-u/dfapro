@@ -15,6 +15,12 @@ import {
   searchContract,
   getMarketSnapshot,
 } from '@/components/api/ibkrClient';
+import {
+  getPolygonSnapshot,
+  getPolygonBars,
+  parsePolygonQuote,
+  parsePolygonBars,
+} from '@/components/api/polygonClient';
 
 const apiFetch = async (path) => {
   const res = await fetch(path);
@@ -80,6 +86,25 @@ const mergeUsIndicesFromBroker = async (indices, broker) => {
     }));
   }
 
+  if (broker === 'polygon') {
+    await Promise.all(usRows.map(async (row) => {
+      try {
+        const etf = US_INDEX_ETF_MAP[row.name];
+        const snap = await getPolygonSnapshot(etf);
+        const q = parsePolygonQuote(snap);
+        if (!q || !q.price) return;
+        row.value = q.price;
+        row.change_percent = q.change_percent ?? row.change_percent;
+        row.change = q.change_percent ?? row.change;
+        row.market_state = 'REGULAR';
+        row.is_open = true;
+        row.source = `Polygon (${etf})`;
+      } catch {
+        // keep proxy row from backend
+      }
+    }));
+  }
+
   return merged;
 };
 
@@ -93,6 +118,13 @@ export const getQuote = async (symbol, market) => {
       if (parsed && parsed.price) return parsed;
     } catch { /* fall through to Yahoo */ }
   }
+  if (broker === 'polygon' && (!market || market === 'us' || market === 'USA')) {
+    try {
+      const snap = await getPolygonSnapshot(symbol);
+      const parsed = parsePolygonQuote(snap);
+      if (parsed && parsed.price) return parsed;
+    } catch { /* fall through to Yahoo */ }
+  }
   return apiFetch(`/api/market/quote?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}`);
 };
 
@@ -102,6 +134,13 @@ export const getCandles = async (symbol, market, interval = 'daily') => {
   if (broker === 'alpaca' && (!market || market === 'us' || market === 'USA')) {
     try {
       const bars = await getAlpacaBars(symbol, interval);
+      if (bars && bars.length > 0) return bars;
+    } catch { /* fall through to Yahoo */ }
+  }
+  if (broker === 'polygon' && (!market || market === 'us' || market === 'USA')) {
+    try {
+      const raw = await getPolygonBars(symbol, interval);
+      const bars = parsePolygonBars(raw);
       if (bars && bars.length > 0) return bars;
     } catch { /* fall through to Yahoo */ }
   }
