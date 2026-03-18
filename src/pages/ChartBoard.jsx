@@ -1326,7 +1326,7 @@ function RightSidebar({ market, selectedStock, onSelect, quote, candles, search,
                 </div>
               </div>
             </div>
-          )}
+            ))}
 
           {/* Key stats */}
           <div className="space-y-0">
