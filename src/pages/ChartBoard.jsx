@@ -417,23 +417,26 @@ export default function ChartBoard() {
   // ── Fetch Quote ──
   useEffect(() => {
     if (!selectedStock) return;
-    setQuote(null);
-    const fetchQuote = () => getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
+    let first = true;
+    const fetchQuote = () => {
+      if (first) { setQuote(null); first = false; }
+      getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
+    };
     fetchQuote();
-    const iv = setInterval(fetchQuote, 5000);
+    const iv = setInterval(fetchQuote, 15000);
     return () => clearInterval(iv);
   }, [selectedStock, market]);
 
   // ── Fetch Candles ──
   useEffect(() => {
     if (!selectedStock) return;
-    fetchCandles();
-    const iv = setInterval(fetchCandles, 10000);
+    fetchCandles(true);
+    const iv = setInterval(() => fetchCandles(false), 30000);
     return () => clearInterval(iv);
   }, [selectedStock, market, timeframe]);
 
-  const fetchCandles = async () => {
-    setLoading(true);
+  const fetchCandles = async (showLoader = true) => {
+    if (showLoader) setLoading(true);
     try {
       const response = await base44.functions.invoke("marketData", {
         action: "candles",
