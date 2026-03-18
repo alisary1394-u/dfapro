@@ -65,6 +65,39 @@ export default function BrokerManager() {
   const [alpacaSaveLoading, setAlpacaSaveLoading] = useState(false);
   const [alpacaSaveStatus, setAlpacaSaveStatus] = useState("");
 
+  // ── Polygon S3 Keys ──
+  const [polygonS3AccessKeyId, setPolygonS3AccessKeyId] = useState("");
+  const [polygonS3SecretAccessKey, setPolygonS3SecretAccessKey] = useState("");
+  const [polygonS3Endpoint, setPolygonS3Endpoint] = useState("");
+  const [polygonS3Bucket, setPolygonS3Bucket] = useState("");
+  const [polygonS3SaveStatus, setPolygonS3SaveStatus] = useState("");
+
+  // Load S3 config from localStorage on mount
+  useEffect(() => {
+    try {
+      const cfg = JSON.parse(localStorage.getItem('polygon_s3_config'));
+      if (cfg) {
+        setPolygonS3AccessKeyId(cfg.accessKeyId || "");
+        setPolygonS3SecretAccessKey(cfg.secretAccessKey || "");
+        setPolygonS3Endpoint(cfg.endpoint || "");
+        setPolygonS3Bucket(cfg.bucket || "");
+      }
+    } catch {}
+  }, []);
+
+  function handleSavePolygonS3Keys() {
+    const cfg = {
+      accessKeyId: polygonS3AccessKeyId.trim(),
+      secretAccessKey: polygonS3SecretAccessKey.trim(),
+      endpoint: polygonS3Endpoint.trim(),
+      bucket: polygonS3Bucket.trim(),
+      enabled: true
+    };
+    localStorage.setItem('polygon_s3_config', JSON.stringify(cfg));
+    setPolygonS3SaveStatus("تم حفظ مفاتيح S3 بنجاح.");
+    setTimeout(() => setPolygonS3SaveStatus("");, 2500);
+  }
+
   // ── Init: Check existing connections, auto-reconnect if keys saved ──
   useEffect(() => {
     getConnectionStatus()
@@ -575,7 +608,67 @@ export default function BrokerManager() {
               <button onClick={() => setShowPolygonKey(!showPolygonKey)} className="p-2 rounded-lg bg-[#1e293b] hover:bg-[#293548] transition-colors">
                 {showPolygonKey ? <EyeOff className="w-4 h-4 text-[#94a3b8]" /> : <Eye className="w-4 h-4 text-[#94a3b8]" />}
               </button>
-            </div>
+
+              {/* Polygon S3 Flat Files Keys */}
+              <div className="mt-6 p-4 bg-[#0f1623] border border-[#1e293b] rounded-xl">
+                <h4 className="text-base font-bold text-[#d4a843] mb-2">مفاتيح S3 Polygon Flat Files</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
+                  <div>
+                    <label className="text-xs text-[#64748b] block mb-1.5">S3 Access Key ID</label>
+                    <input
+                      value={polygonS3AccessKeyId}
+                      onChange={e => setPolygonS3AccessKeyId(e.target.value)}
+                      placeholder="ACCESS_KEY_ID"
+                      className="w-full bg-[#0a0e17] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-[#d4a843]/50"
+                      dir="ltr"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[#64748b] block mb-1.5">S3 Secret Access Key</label>
+                    <input
+                      type="password"
+                      value={polygonS3SecretAccessKey}
+                      onChange={e => setPolygonS3SecretAccessKey(e.target.value)}
+                      placeholder="SECRET_ACCESS_KEY"
+                      className="w-full bg-[#0a0e17] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-[#d4a843]/50"
+                      dir="ltr"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[#64748b] block mb-1.5">S3 Endpoint</label>
+                    <input
+                      value={polygonS3Endpoint}
+                      onChange={e => setPolygonS3Endpoint(e.target.value)}
+                      placeholder="https://s3.amazonaws.com"
+                      className="w-full bg-[#0a0e17] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-[#d4a843]/50"
+                      dir="ltr"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[#64748b] block mb-1.5">S3 Bucket</label>
+                    <input
+                      value={polygonS3Bucket}
+                      onChange={e => setPolygonS3Bucket(e.target.value)}
+                      placeholder="اسم البكت"
+                      className="w-full bg-[#0a0e17] border border-[#1e293b] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-[#d4a843]/50"
+                      dir="ltr"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={handleSavePolygonS3Keys}
+                  className="mt-2 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#d4a843]/20 border border-[#d4a843]/30 text-[#d4a843] text-sm font-bold hover:bg-[#d4a843]/30 transition-all"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> حفظ مفاتيح S3
+                </button>
+                {polygonS3SaveStatus && (
+                  <p className="text-xs text-emerald-400 mt-2">{polygonS3SaveStatus}</p>
+                )}
+              </div>
           </div>
 
           <div>

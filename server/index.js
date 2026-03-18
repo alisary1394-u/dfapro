@@ -1953,6 +1953,20 @@ app.get('/api/polygon/stream/:symbol', (req, res) => {
   });
 });
 
+// ── Polygon S3 Flat Files endpoint ──
+const { fetchCandlesFromS3 } = require('./polygonS3.js');
+app.get('/api/polygon/s3', async (req, res) => {
+  try {
+    const { accessKeyId, secretAccessKey, endpoint, bucket, symbol, filePath } = req.query;
+    if (!accessKeyId || !secretAccessKey || !endpoint || !bucket || !symbol || !filePath)
+      return res.status(400).json({ error: 'Missing S3 parameters' });
+    const candles = await fetchCandlesFromS3({ accessKeyId, secretAccessKey, endpoint, bucket, symbol, filePath });
+    res.json({ candles });
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to fetch S3 candles', details: err.message });
+  }
+});
+
 app.get('/api/health', (_, res) => {
   res.json({ ok: true });
 });
