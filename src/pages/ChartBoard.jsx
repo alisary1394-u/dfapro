@@ -427,6 +427,7 @@ export default function ChartBoard() {
   const macdChartRef = useRef(null);
   const stochContainerRef = useRef(null);
   const stochChartRef = useRef(null);
+  const savedRangeRef = useRef(null);
 
   const selectedTf = useMemo(() => TIMEFRAMES.find(t => t.value === timeframe) || TIMEFRAMES[4], [timeframe]);
 
@@ -446,6 +447,7 @@ export default function ChartBoard() {
   // ── Fetch Candles ──
   useEffect(() => {
     if (!selectedStock) return;
+    savedRangeRef.current = null;
     fetchCandles(true);
     const iv = setInterval(() => fetchCandles(false), 5000);
     return () => clearInterval(iv);
@@ -498,7 +500,11 @@ export default function ChartBoard() {
     // === MAIN CHART ===
     const mainContainer = mainContainerRef.current;
     if (mainContainer) {
-      if (mainChartRef.current) { try { mainChartRef.current.remove(); } catch (_) {} }
+      // Save current visible range before destroying
+      if (mainChartRef.current) {
+        try { savedRangeRef.current = mainChartRef.current.timeScale().getVisibleLogicalRange(); } catch (_) {}
+        try { mainChartRef.current.remove(); } catch (_) {}
+      }
 
       const chart = createChart(mainContainer, {
         ...chartOpts(mainContainer),
@@ -575,7 +581,12 @@ export default function ChartBoard() {
         }
       });
 
-      chart.timeScale().fitContent();
+      // Restore scroll position or fit content on first load
+      if (savedRangeRef.current) {
+        try { chart.timeScale().setVisibleLogicalRange(savedRangeRef.current); } catch (_) { chart.timeScale().fitContent(); }
+      } else {
+        chart.timeScale().fitContent();
+      }
       mainChartRef.current = chart;
 
       // Sync sub-charts on scroll
@@ -924,6 +935,7 @@ export default function ChartBoard() {
     setCandles([]);
     setShowAI(false);
     setCurrentBar(null);
+    savedRangeRef.current = null;
   };
 
   const change = quote?.change_percent;
