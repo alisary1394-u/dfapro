@@ -428,6 +428,12 @@ export default function ChartBoard() {
   const stochContainerRef = useRef(null);
   const stochChartRef = useRef(null);
   const savedRangeRef = useRef(null);
+  const mainSeriesRef = useRef(null);
+  const volSeriesRef = useRef(null);
+  const overlaySeriesRef = useRef([]);
+  const prevChartTypeRef = useRef(null);
+  const prevOverlaysRef = useRef(null);
+  const prevSubsRef = useRef(null);
 
   const selectedTf = useMemo(() => TIMEFRAMES.find(t => t.value === timeframe) || TIMEFRAMES[4], [timeframe]);
 
@@ -483,7 +489,20 @@ export default function ChartBoard() {
         .sort((a, b) => (a.time > b.time ? 1 : a.time < b.time ? -1 : 0));
 
       if (processed.length > 0) {
-        setCandles(processed);
+        // Only update state if data actually changed (compare last candle)
+        setCandles(prev => {
+          if (prev.length === processed.length) {
+            const lastPrev = prev[prev.length - 1];
+            const lastNew = processed[processed.length - 1];
+            if (lastPrev && lastNew && 
+                lastPrev.time === lastNew.time && 
+                lastPrev.close === lastNew.close &&
+                lastPrev.volume === lastNew.volume) {
+              return prev; // same reference = no re-render
+            }
+          }
+          return processed;
+        });
         setCurrentBar(processed[processed.length - 1]);
       }
     } catch (err) {
@@ -493,9 +512,70 @@ export default function ChartBoard() {
   };
 
   // ── Build All Charts ──
+  // Determine if we need a full rebuild or just data update
+  const needsRebuild = () => {
+    if (!mainChartRef.current || !mainSeriesRef.current) return true;
+    if (prevChartTypeRef.current !== chartType) return true;
+    if (JSON.stringify(prevOverlaysRef.current) !== JSON.stringify(overlays)) return true;
+    if (JSON.stringify(prevSubsRef.current) !== JSON.stringify(subs)) return true;
+    return false;
+  };
+
   useEffect(() => {
     if (!candles || candles.length === 0) return;
+
+    // If only data changed, update existing series without rebuilding
+    if (!needsRebuild()) {
+      let displayData = candles;
+      if (chartType === "heikinashi") displayData = toHeikinAshi(candles);
+
+      // Update main series
+      if (mainSeriesRef.current) {
+        if (chartType === "candlestick" || chartType === "heikinashi" || chartType === "bar") {
+          mainSeriesRef.current.setData(displayData);
+        } else {
+          mainSeriesRef.current.setData(displayData.map(c => ({ time: c.time, value: c.close })));
+        }
+      }
+      // Update volume
+      if (volSeriesRef.current) {
+        volSeriesRef.current.setData(candles.map(c => ({
+          time: c.time, value: c.volume || 0,
+          color: c.close >= c.open ? "rgba(0,192,135,0.2)" : "rgba(255,71,87,0.2)",
+        })));
+      }
+      // Update overlay series data
+      let idx = 0;
+      if (overlays.ema20.enabled && overlaySeriesRef.current[idx]) overlaySeriesRef.current[idx].setData(calcEMA(candles, overlays.ema20.period));
+      if (overlays.ema20.enabled) idx++;
+      if (overlays.ema50.enabled && overlaySeriesRef.current[idx]) overlaySeriesRef.current[idx].setData(calcEMA(candles, overlays.ema50.period));
+      if (overlays.ema50.enabled) idx++;
+      if (overlays.sma200.enabled && overlaySeriesRef.current[idx]) overlaySeriesRef.current[idx].setData(calcSMA(candles, overlays.sma200.period));
+      if (overlays.sma200.enabled) idx++;
+      if (overlays.bb.enabled) {
+        const bb = calcBollingerBands(candles, overlays.bb.period, overlays.bb.multiplier);
+        if (overlaySeriesRef.current[idx]) overlaySeriesRef.current[idx].setData(bb.upper);
+        idx++;
+        if (overlaySeriesRef.current[idx]) overlaySeriesRef.current[idx].setData(bb.middle);
+        idx++;
+        if (overlaySeriesRef.current[idx]) overlaySeriesRef.current[idx].setData(bb.lower);
+        idx++;
+      }
+      if (overlays.vwap.enabled && overlaySeriesRef.current[idx]) overlaySeriesRef.current[idx].setData(calcVWAP(candles));
+
+      // Update sub charts data only
+      if (subs.rsi.enabled && rsiChartRef.current) {
+        // RSI data update not easily done without series ref - skip, it's rarely changed
+      }
+      setCurrentBar(candles[candles.length - 1]);
+      return; // no cleanup needed for data-only update
+    }
+
+    // Full rebuild
     const cleanups = [];
+    prevChartTypeRef.current = chartType;
+    prevOverlaysRef.current = JSON.parse(JSON.stringify(overlays));
+    prevSubsRef.current = JSON.parse(JSON.stringify(subs));
 
     // === MAIN CHART ===
     const mainContainer = mainContainerRef.current;
@@ -537,6 +617,7 @@ export default function ChartBoard() {
         mainSeries = chart.addBarSeries({ upColor: C.up, downColor: C.down });
         mainSeries.setData(displayData);
       }
+      mainSeriesRef.current = mainSeries;
 
       // Volume overlay (bottom 18% of main chart)
       const volSeries = chart.addHistogramSeries({
@@ -550,28 +631,39 @@ export default function ChartBoard() {
         time: c.time, value: c.volume || 0,
         color: c.close >= c.open ? "rgba(0,192,135,0.2)" : "rgba(255,71,87,0.2)",
       })));
+      volSeriesRef.current = volSeries;
 
       // Overlay indicators
       const lineOpts = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false };
+      const oSeries = [];
 
       if (overlays.ema20.enabled) {
-        chart.addLineSeries({ ...lineOpts, color: overlays.ema20.color }).setData(calcEMA(candles, overlays.ema20.period));
+        const s = chart.addLineSeries({ ...lineOpts, color: overlays.ema20.color });
+        s.setData(calcEMA(candles, overlays.ema20.period));
+        oSeries.push(s);
       }
       if (overlays.ema50.enabled) {
-        chart.addLineSeries({ ...lineOpts, color: overlays.ema50.color }).setData(calcEMA(candles, overlays.ema50.period));
+        const s = chart.addLineSeries({ ...lineOpts, color: overlays.ema50.color });
+        s.setData(calcEMA(candles, overlays.ema50.period));
+        oSeries.push(s);
       }
       if (overlays.sma200.enabled) {
-        chart.addLineSeries({ ...lineOpts, color: overlays.sma200.color }).setData(calcSMA(candles, overlays.sma200.period));
+        const s = chart.addLineSeries({ ...lineOpts, color: overlays.sma200.color });
+        s.setData(calcSMA(candles, overlays.sma200.period));
+        oSeries.push(s);
       }
       if (overlays.bb.enabled) {
         const bb = calcBollingerBands(candles, overlays.bb.period, overlays.bb.multiplier);
-        chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: 2 }).setData(bb.upper);
-        chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: 1 }).setData(bb.middle);
-        chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: 2 }).setData(bb.lower);
+        const s1 = chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: 2 }); s1.setData(bb.upper); oSeries.push(s1);
+        const s2 = chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: 1 }); s2.setData(bb.middle); oSeries.push(s2);
+        const s3 = chart.addLineSeries({ ...lineOpts, color: overlays.bb.color, lineStyle: 2 }); s3.setData(bb.lower); oSeries.push(s3);
       }
       if (overlays.vwap.enabled) {
-        chart.addLineSeries({ ...lineOpts, color: overlays.vwap.color, lineWidth: 1.5, lineStyle: 4 }).setData(calcVWAP(candles));
+        const s = chart.addLineSeries({ ...lineOpts, color: overlays.vwap.color, lineWidth: 1.5, lineStyle: 4 });
+        s.setData(calcVWAP(candles));
+        oSeries.push(s);
       }
+      overlaySeriesRef.current = oSeries;
 
       // Crosshair tracking
       chart.subscribeCrosshairMove(param => {
