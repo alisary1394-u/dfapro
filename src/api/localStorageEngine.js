@@ -71,7 +71,7 @@ const createEntityProxy = (entityName) => ({
   },
 });
 
-// ─── Real Market Data via Server API + Direct Yahoo Finance fallback ──────
+// ─── Real Market Data via Server API ──────
 
 // Deployed server URL (Railway/Render/etc.) - update this when deployed
 const DEPLOYED_API = import.meta.env.VITE_API_URL || '';
@@ -182,7 +182,7 @@ const tryFetchApi = async (url) => {
   return data;
 };
 
-// Try local server first, then deployed server, then Yahoo Finance via CORS proxy
+// Try local server first, then deployed server
 const fetchRealMarketData = async (params) => {
   const { action, symbol, market } = params;
 

@@ -3,10 +3,10 @@ import { TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 import { getIndices } from "@/components/api/marketDataClient";
 
 const FALLBACK = [
-  { name: "تاسي", value: 12456.78, change_percent: 1.23, market: "saudi", market_state: "REGULAR", is_open: true, source: "Yahoo Finance" },
-  { name: "S&P 500", value: 5234.56, change_percent: 0.89, market: "us", market_state: "REGULAR", is_open: true, source: "Yahoo Finance" },
-  { name: "ناسداك", value: 16789.12, change_percent: 1.56, market: "us", market_state: "REGULAR", is_open: true, source: "Yahoo Finance" },
-  { name: "داو جونز", value: 39456.78, change_percent: -0.12, market: "us", market_state: "REGULAR", is_open: true, source: "Yahoo Finance" },
+  { name: "تاسي", value: 12456.78, change_percent: 1.23, market: "saudi", market_state: "REGULAR", is_open: true, source: "بيانات السوق" },
+  { name: "S&P 500", value: 5234.56, change_percent: 0.89, market: "us", market_state: "REGULAR", is_open: true, source: "بيانات السوق" },
+  { name: "ناسداك", value: 16789.12, change_percent: 1.56, market: "us", market_state: "REGULAR", is_open: true, source: "بيانات السوق" },
+  { name: "داو جونز", value: 39456.78, change_percent: -0.12, market: "us", market_state: "REGULAR", is_open: true, source: "بيانات السوق" },
 ];
 
 const stateLabelAr = (state, isOpen) => {
@@ -78,7 +78,7 @@ export default function MarketOverviewBar({ compact = false }) {
                 <span className={`text-[8px] font-semibold px-1 py-0.5 rounded ${idx.is_open ? "text-emerald-400 bg-emerald-500/10" : "text-red-400 bg-red-500/10"}`}>
                   {marketStatus}
                 </span>
-                {!compact && <span className="text-[8px] text-[#334155]">{idx.source || "Yahoo Finance"}</span>}
+                {!compact && <span className="text-[8px] text-[#334155]">{idx.source || "بيانات السوق"}</span>}
               </div>
               {i < indices.length - 1 && <div className="w-px h-5 bg-[#1a2540] shrink-0" />}
             </div>

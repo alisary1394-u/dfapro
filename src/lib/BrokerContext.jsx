@@ -15,11 +15,6 @@ import {
   alpacaConfig,
 } from '@/components/api/alpacaClient';
 import {
-  connectToGateway,
-  getConnectionStatus,
-  ibkrConfig,
-} from '@/components/api/ibkrClient';
-import {
   connectPolygon,
   disconnectPolygon,
   getPolygonStatus,
@@ -30,31 +25,24 @@ const BrokerContext = createContext(null);
 
 export function BrokerProvider({ children }) {
   const [broker, setBrokerState] = useState({
-    active: null,        // 'alpaca' | 'ibkr' | 'polygon' | null
+    active: null,        // 'alpaca' | 'polygon' | null
     alpacaConnected: false,
     alpacaPaper: true,
-    ibkrConnected: false,
     polygonConnected: false,
     loading: true,
   });
 
   const setAlpacaActive = useCallback((connected, paper) => {
-    setBrokerState(prev => ({ ...prev, alpacaConnected: connected, alpacaPaper: paper ?? prev.alpacaPaper, active: connected ? 'alpaca' : (prev.ibkrConnected ? 'ibkr' : null), loading: false }));
+    setBrokerState(prev => ({ ...prev, alpacaConnected: connected, alpacaPaper: paper ?? prev.alpacaPaper, active: connected ? 'alpaca' : (prev.polygonConnected ? 'polygon' : null), loading: false }));
     if (connected) setBroker('alpaca');
-    else if (!broker.ibkrConnected) clearBroker();
-  }, [broker.ibkrConnected]);
-
-  const setIbkrActive = useCallback((connected) => {
-    setBrokerState(prev => ({ ...prev, ibkrConnected: connected, active: connected ? 'ibkr' : (prev.alpacaConnected ? 'alpaca' : (prev.polygonConnected ? 'polygon' : null)), loading: false }));
-    if (connected) { if (!broker.alpacaConnected) setBroker('ibkr'); }
-    else if (!broker.alpacaConnected && !broker.polygonConnected) clearBroker();
-  }, [broker.alpacaConnected, broker.polygonConnected]);
+    else if (!broker.polygonConnected) clearBroker();
+  }, [broker.polygonConnected]);
 
   const setPolygonActive = useCallback((connected) => {
-    setBrokerState(prev => ({ ...prev, polygonConnected: connected, active: connected ? 'polygon' : (prev.alpacaConnected ? 'alpaca' : (prev.ibkrConnected ? 'ibkr' : null)), loading: false }));
+    setBrokerState(prev => ({ ...prev, polygonConnected: connected, active: connected ? 'polygon' : (prev.alpacaConnected ? 'alpaca' : null), loading: false }));
     if (connected) setBroker('polygon');
-    else if (!broker.alpacaConnected && !broker.ibkrConnected) clearBroker();
-  }, [broker.alpacaConnected, broker.ibkrConnected]);
+    else if (!broker.alpacaConnected) clearBroker();
+  }, [broker.alpacaConnected]);
 
   // ── Auto-connect on mount ──
   useEffect(() => {
@@ -90,16 +78,6 @@ export function BrokerProvider({ children }) {
       }
     };
 
-    const tryIbkr = async () => {
-      try {
-        const s = await getConnectionStatus();
-        if (s.connected && !cancelled) {
-          setBroker('ibkr');
-          setBrokerState(prev => ({ ...prev, ibkrConnected: true, active: prev.active || 'ibkr', loading: false }));
-        }
-      } catch { /* not connected */ }
-    };
-
     const tryPolygon = async () => {
       try {
         const status = await getPolygonStatus();
@@ -128,7 +106,7 @@ export function BrokerProvider({ children }) {
       }
     };
 
-    Promise.all([tryAlpaca(), tryIbkr(), tryPolygon()]);
+    Promise.all([tryAlpaca(), tryPolygon()]);
     return () => { cancelled = true; };
   }, []);
 
@@ -144,7 +122,7 @@ export function BrokerProvider({ children }) {
             const r = await connectAlpaca(saved.apiKey, saved.secretKey, saved.paper !== false).catch(() => null);
             if (!r?.connected) {
               clearBroker();
-              setBrokerState(prev => ({ ...prev, alpacaConnected: false, active: prev.ibkrConnected ? 'ibkr' : null }));
+              setBrokerState(prev => ({ ...prev, alpacaConnected: false, active: prev.polygonConnected ? 'polygon' : null }));
             }
           }
         } else if (s.connected && !broker.alpacaConnected) {
@@ -154,23 +132,20 @@ export function BrokerProvider({ children }) {
       } catch { /* ignore */ }
     }, 30000);
     return () => clearInterval(iv);
-  }, [broker.alpacaConnected, broker.ibkrConnected]);
+  }, [broker.alpacaConnected, broker.polygonConnected]);
 
   return (
-    <BrokerContext.Provider value={{ broker, setAlpacaActive, setIbkrActive, setPolygonActive }}>
+    <BrokerContext.Provider value={{ broker, setAlpacaActive, setPolygonActive }}>
       {/* Live data indicator bar */}
       {broker.active && !broker.loading && (
         <div className={`fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center gap-2 py-1 text-[11px] font-bold ${
           broker.active === 'alpaca' ? 'bg-[#ffeb3b]/10 border-t border-[#ffeb3b]/20 text-[#ffeb3b]'
-          : broker.active === 'polygon' ? 'bg-[#7c3aed]/10 border-t border-[#7c3aed]/20 text-[#7c3aed]'
-          : 'bg-[#ff9800]/10 border-t border-[#ff9800]/20 text-[#ff9800]'
+          : 'bg-[#7c3aed]/10 border-t border-[#7c3aed]/20 text-[#7c3aed]'
         }`}>
           <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
           {broker.active === 'alpaca'
             ? `Alpaca ${broker.alpacaPaper ? '(ورقي)' : '(حقيقي)'} — بيانات لحظية نشطة`
-            : broker.active === 'polygon'
-            ? 'Polygon.io — بيانات لحظية نشطة'
-            : 'IBKR — بيانات لحظية نشطة'}
+            : 'Polygon.io — بيانات لحظية نشطة'}
         </div>
       )}
       {children}
@@ -180,6 +155,6 @@ export function BrokerProvider({ children }) {
 
 export const useBroker = () => {
   const ctx = useContext(BrokerContext);
-  if (!ctx) return { broker: { active: null, alpacaConnected: false, ibkrConnected: false, polygonConnected: false, loading: false } };
+  if (!ctx) return { broker: { active: null, alpacaConnected: false, polygonConnected: false, loading: false } };
   return ctx;
 };

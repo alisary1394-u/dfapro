@@ -1,6 +1,6 @@
 /**
- * Client-side helper – calls Express /api/market/* endpoints (Yahoo Finance proxy).
- * When a live broker is active (Alpaca/IBKR), routes through it for real-time data.
+ * Client-side helper – calls Express /api/market/* endpoints.
+ * When a live broker is active (Alpaca/Polygon), routes through it for real-time data.
  */
 
 import { getActiveBroker } from '@/lib/brokerState';
@@ -11,10 +11,6 @@ import {
   getAlpacaMovers,
   getAlpacaUniverseStats,
 } from '@/components/api/alpacaClient';
-import {
-  searchContract,
-  getMarketSnapshot,
-} from '@/components/api/ibkrClient';
 import {
   getPolygonSnapshot,
   getPolygonBars,
@@ -33,8 +29,6 @@ const US_INDEX_ETF_MAP = {
   'ناسداك': 'QQQ',
   'داو جونز': 'DIA',
 };
-
-const ibkrConidCache = new Map();
 
 const mergeUsIndicesFromBroker = async (indices, broker) => {
   const merged = [...indices];
@@ -59,31 +53,6 @@ const mergeUsIndicesFromBroker = async (indices, broker) => {
       }
     }));
     return merged;
-  }
-
-  if (broker === 'ibkr') {
-    await Promise.all(usRows.map(async (row) => {
-      try {
-        const etf = US_INDEX_ETF_MAP[row.name];
-        let conid = ibkrConidCache.get(etf);
-        if (!conid) {
-          const results = await searchContract(etf);
-          conid = results?.find((x) => x?.conid)?.conid;
-          if (!conid) return;
-          ibkrConidCache.set(etf, conid);
-        }
-        const snap = await getMarketSnapshot(conid, 'SMART', 'USD', 'STK');
-        if (!snap?.price) return;
-        row.value = snap.price;
-        row.change_percent = snap.change_percent ?? row.change_percent;
-        row.change = snap.change_percent ?? row.change;
-        row.market_state = 'REGULAR';
-        row.is_open = true;
-        row.source = `IBKR (${etf})`;
-      } catch {
-        // keep proxy row from backend
-      }
-    }));
   }
 
   if (broker === 'polygon') {
@@ -116,14 +85,14 @@ export const getQuote = async (symbol, market) => {
       const snap = await getAlpacaSnapshot(symbol);
       const parsed = parseAlpacaQuote(snap);
       if (parsed && parsed.price) return parsed;
-    } catch { /* fall through to Yahoo */ }
+    } catch { /* fall through to server proxy */ }
   }
   if (broker === 'polygon' && (!market || market === 'us' || market === 'USA')) {
     try {
       const snap = await getPolygonSnapshot(symbol);
       const parsed = parsePolygonQuote(snap);
       if (parsed && parsed.price) return parsed;
-    } catch { /* fall through to Yahoo */ }
+    } catch { /* fall through to server proxy */ }
   }
   return apiFetch(`/api/market/quote?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}`);
 };
@@ -135,14 +104,14 @@ export const getCandles = async (symbol, market, interval = 'daily') => {
     try {
       const bars = await getAlpacaBars(symbol, interval);
       if (bars && bars.length > 0) return bars;
-    } catch { /* fall through to Yahoo */ }
+    } catch { /* fall through to server proxy */ }
   }
   if (broker === 'polygon' && (!market || market === 'us' || market === 'USA')) {
     try {
       const raw = await getPolygonBars(symbol, interval);
       const bars = parsePolygonBars(raw);
       if (bars && bars.length > 0) return bars;
-    } catch { /* fall through to Yahoo */ }
+    } catch { /* fall through to server proxy */ }
   }
   const data = await apiFetch(`/api/market/candles?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}&interval=${encodeURIComponent(interval)}`);
   return data?.candles || null;

@@ -1251,10 +1251,8 @@ const publicUser = (user) => ({
   alpaca_api_key: user.alpaca_api_key ?? '',
   alpaca_secret_key: user.alpaca_secret_key ?? '',
   alpaca_base_url: user.alpaca_base_url ?? '',
-  market_data_provider: user.market_data_provider ?? 'yahoo',
+  market_data_provider: user.market_data_provider ?? 'polygon',
   polygon_api_key: user.polygon_api_key ?? '',
-  tradier_api_key: user.tradier_api_key ?? '',
-  tadawul_api_key: user.tadawul_api_key ?? ''
 });
 
 const ensureAdminUser = async () => {
@@ -1280,10 +1278,8 @@ const ensureAdminUser = async () => {
     alpaca_api_key: '',
     alpaca_secret_key: '',
     alpaca_base_url: '',
-    market_data_provider: 'yahoo',
+    market_data_provider: 'polygon',
     polygon_api_key: '',
-    tradier_api_key: '',
-    tadawul_api_key: ''
   });
   await db.write();
 };
@@ -1373,152 +1369,6 @@ const sendVerificationEmail = async (user, token) => {
 
   return { previewUrl: null, sent: true };
 };
-
-// ═══════════════════════════════════════════════════════════════
-// INTERACTIVE BROKERS - TWS API (via @stoqey/ib)
-// ═══════════════════════════════════════════════════════════════
-// Connects to IB Gateway via TWS protocol on port 4001 (live) or 4002 (paper).
-
-import * as ibkrTws from './ibkrTws.js';
-
-// Streaming subscriptions for SSE clients
-const sseClients = new Set();
-
-// IBKR Connect
-app.post('/api/ibkr/connect', async (req, res) => {
-  try {
-    const { host = '127.0.0.1', port = 4001, clientId = 0 } = req.body || {};
-    // Validate port to expected range
-    if (![4001, 4002, 7496, 7497].includes(Number(port))) {
-      return res.status(400).json({ error: 'Invalid port. Use 4001 (live) or 4002 (paper)' });
-    }
-    const result = await ibkrTws.connect(host, Number(port), Number(clientId));
-    res.json(result);
-  } catch (err) {
-    console.error('IBKR connect error:', err.message);
-    res.status(502).json({ error: 'Cannot connect to IB Gateway', details: err.message, connected: false });
-  }
-});
-
-// IBKR Disconnect
-app.post('/api/ibkr/disconnect', (req, res) => {
-  const result = ibkrTws.disconnect();
-  res.json(result);
-});
-
-// IBKR Connection Status
-app.get('/api/ibkr/status', (req, res) => {
-  res.json(ibkrTws.getStatus());
-});
-
-// IBKR Accounts
-app.get('/api/ibkr/accounts', (req, res) => {
-  try {
-    const accounts = ibkrTws.getAccounts();
-    res.json(accounts);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to get accounts', details: err.message });
-  }
-});
-
-// IBKR Account Summary
-app.get('/api/ibkr/account/:accountId/summary', async (req, res) => {
-  try {
-    const data = await ibkrTws.getAccountSummary(req.params.accountId);
-    res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to get account summary', details: err.message });
-  }
-});
-
-// IBKR Positions
-app.get('/api/ibkr/positions', async (req, res) => {
-  try {
-    const data = await ibkrTws.getPositionsData();
-    res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to get positions', details: err.message });
-  }
-});
-
-// IBKR Symbol Search
-app.post('/api/ibkr/search', async (req, res) => {
-  try {
-    const { symbol } = req.body || {};
-    if (!symbol) return res.status(400).json({ error: 'Symbol required' });
-    const results = await ibkrTws.searchSymbol(String(symbol));
-    res.json(results);
-  } catch (err) {
-    res.status(502).json({ error: 'Symbol search failed', details: err.message });
-  }
-});
-
-// IBKR Contract Details
-app.get('/api/ibkr/contract/:conid', async (req, res) => {
-  try {
-    const data = await ibkrTws.getContractDetails(Number(req.params.conid));
-    res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: 'Contract details failed', details: err.message });
-  }
-});
-
-// IBKR Market Data Snapshot
-app.get('/api/ibkr/quote/:conid', async (req, res) => {
-  try {
-    const { exchange = 'SMART', currency = 'USD', secType = 'STK' } = req.query;
-    const data = await ibkrTws.getMarketSnapshot(
-      Number(req.params.conid), exchange, currency, secType
-    );
-    res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: 'Market data snapshot failed', details: err.message });
-  }
-});
-
-// IBKR Historical Data
-app.get('/api/ibkr/history/:conid', async (req, res) => {
-  try {
-    const { interval = 'daily', exchange = 'SMART', currency = 'USD', secType = 'STK' } = req.query;
-    const data = await ibkrTws.getHistoricalData(
-      Number(req.params.conid), interval, exchange, currency, secType
-    );
-    res.json({ data });
-  } catch (err) {
-    console.error('IBKR history error:', err.message);
-    res.status(502).json({ error: 'Historical data failed', details: err.message });
-  }
-});
-
-// IBKR Streaming Market Data (SSE)
-app.get('/api/ibkr/stream/:conid', (req, res) => {
-  if (!ibkrTws.isConnected()) {
-    return res.status(502).json({ error: 'Not connected to IBKR' });
-  }
-
-  const conid = Number(req.params.conid);
-  const { exchange = 'SMART', currency = 'USD', secType = 'STK' } = req.query;
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
-
-  const sub = ibkrTws.subscribeMarketData(conid, exchange, currency, secType, (tick) => {
-    res.write(`data: ${JSON.stringify(tick)}\n\n`);
-  });
-
-  req.on('close', () => {
-    sub.unsubscribe();
-  });
-});
-
-// IBKR Unsubscribe All
-app.post('/api/ibkr/unsubscribe-all', (req, res) => {
-  ibkrTws.unsubscribeAllMarketData();
-  res.json({ ok: true });
-});
 
 // ═══════════════════════════════════════════════════════════════
 // ALPACA MARKETS - REST API
@@ -2019,10 +1869,8 @@ app.post('/api/auth/register', async (req, res) => {
     alpaca_api_key: '',
     alpaca_secret_key: '',
     alpaca_base_url: '',
-    market_data_provider: 'yahoo',
+    market_data_provider: 'polygon',
     polygon_api_key: '',
-    tradier_api_key: '',
-    tadawul_api_key: ''
   };
 
   db.data.users.push(user);
@@ -2078,9 +1926,7 @@ app.patch('/api/auth/me', authRequired, async (req, res) => {
     'alpaca_secret_key',
     'alpaca_base_url',
     'market_data_provider',
-    'polygon_api_key',
-    'tradier_api_key',
-    'tadawul_api_key'
+    'polygon_api_key'
   ];
 
   for (const field of allowedFields) {

@@ -61,8 +61,8 @@ const sourceLabelAr = (broker) => {
   if (broker?.active === 'alpaca') {
     return `Alpaca ${broker?.alpacaPaper ? '(ورقي)' : '(حقيقي)'}`;
   }
-  if (broker?.active === 'ibkr') return 'IBKR (تدفّق مباشر)';
-  return 'Yahoo (مزود افتراضي)';
+  if (broker?.active === 'polygon') return 'Polygon.io';
+  return 'بيانات السوق';
 };
 
 export default function Dashboard() {

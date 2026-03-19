@@ -382,7 +382,7 @@ export default function OptionsAnalysis() {
             <div className="bg-[#151c2c] border border-[#d4a843]/20 rounded-2xl p-5">
               <h3 className="text-sm font-bold text-[#d4a843] mb-2">📋 الملخص التحليلي</h3>
               <p className="text-sm text-[#94a3b8] leading-relaxed">{result.summary}</p>
-              <p className="text-xs text-[#64748b] mt-2">مصدر البيانات: سلسلة الخيارات الأمريكية (Yahoo Finance)</p>
+              <p className="text-xs text-[#64748b] mt-2">مصدر البيانات: سلسلة الخيارات الأمريكية</p>
             </div>
           )}
         </div>
