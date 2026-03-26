@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
+// On GitHub Pages there is no backend – disable socket to avoid mixed-content warnings.
+const GITHUB_PAGES = import.meta.env.VITE_GITHUB_PAGES === 'true';
 const SOCKET_URL = import.meta.env.DEV ? 'http://localhost:8080' : window.location.origin;
 
 let socket = null;
 const getSocket = () => {
+  if (GITHUB_PAGES) return null;
   if (!socket) {
     socket = io(SOCKET_URL, { transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 2000 });
   }
@@ -25,6 +28,7 @@ export function useLivePrices(symbols, market) {
     if (!symbols?.length || !market) return;
 
     const s = getSocket();
+    if (!s) return;
     s.emit('subscribe', { symbols, market });
 
     const handler = (data) => {
