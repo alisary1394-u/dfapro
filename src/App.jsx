@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { pagesConfig } from './pages.config'
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { BrokerProvider } from '@/lib/BrokerContext';
@@ -14,6 +14,7 @@ import VerifyEmail from '@/pages/VerifyEmail';
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
 const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
+const RouterComponent = import.meta.env.VITE_ROUTER_MODE === 'hash' ? HashRouter : BrowserRouter;
 
 const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   <Layout currentPageName={currentPageName}>{children}</Layout>
@@ -85,14 +86,14 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <BrokerProvider>
-          <Router>
+          <RouterComponent>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="*" element={<AuthenticatedApp />} />
             </Routes>
-          </Router>
+          </RouterComponent>
           <Toaster />
         </BrokerProvider>
       </QueryClientProvider>
