@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VITE_ROUTER_MODE: hash
-      VITE_BASE_PATH: /${{ github.event.repository.name }}/
+      VITE_BASE_PATH: /
     steps:
       - name: Checkout
         uses: actions/checkout@v4
