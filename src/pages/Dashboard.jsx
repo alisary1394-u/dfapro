@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse, getBrokerUniverseStats, getFearGreed } from "@/components/api/marketDataClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import { useAuth } from "@/lib/AuthContext";
 import { useBroker } from "@/lib/BrokerContext";
 import { connectAlpaca, disconnectAlpaca, alpacaConfig } from "@/components/api/alpacaClient";
 import { connectPolygon, disconnectPolygon, polygonConfig } from "@/components/api/polygonClient";
@@ -70,6 +71,7 @@ const sourceLabelAr = (broker) => {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { broker, setAlpacaActive, setPolygonActive } = useBroker();
   const { layout, market, loaded, toggleWidget, moveWidget, updateMarket } = useDashboardLayout();
   const [liveMovers, setLiveMovers] = useState(null);
@@ -189,17 +191,22 @@ export default function Dashboard() {
       return;
     }
 
-    const saved = alpacaConfig.getConfig();
-    if (!saved?.apiKey || !saved?.secretKey) {
+    const saved = alpacaConfig.getConfig() || {};
+    const apiKey = saved.apiKey || user?.alpaca_api_key || "";
+    const secretKey = saved.secretKey || user?.alpaca_secret_key || "";
+    const paper = saved.paper !== false;
+
+    if (!apiKey || !secretKey) {
       navigate(createPageUrl("BrokerManager"));
       return;
     }
 
     setAlpacaActionLoading(true);
     try {
-      const result = await connectAlpaca(saved.apiKey, saved.secretKey, saved.paper !== false);
+      const result = await connectAlpaca(apiKey, secretKey, paper);
       if (result?.connected) {
-        setAlpacaActive(true, saved.paper !== false);
+        alpacaConfig.saveConfig({ apiKey, secretKey, paper, connected: true });
+        setAlpacaActive(true, paper);
       }
     } catch {
       // If reconnect fails, send user to broker settings to verify keys.
@@ -225,16 +232,18 @@ export default function Dashboard() {
       return;
     }
 
-    const saved = polygonConfig.getConfig();
-    if (!saved?.apiKey) {
+    const saved = polygonConfig.getConfig() || {};
+    const apiKey = saved.apiKey || user?.polygon_api_key || "";
+    if (!apiKey) {
       navigate(createPageUrl("BrokerManager"));
       return;
     }
 
     setPolygonActionLoading(true);
     try {
-      const result = await connectPolygon(saved.apiKey);
+      const result = await connectPolygon(apiKey);
       if (result?.connected) {
+        polygonConfig.saveConfig({ apiKey, connected: true });
         setPolygonActive(true);
       }
     } catch {
