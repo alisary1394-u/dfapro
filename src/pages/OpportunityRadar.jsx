@@ -18,7 +18,7 @@ const strategies = [
 export default function OpportunityRadar() {
   const navigate = useNavigate();
   const [selectedStrategy, setSelectedStrategy] = useState(null);
-  const [market, setMarket] = useState("saudi");
+  const [market, setMarket] = useState("us");
   const [loading, setLoading] = useState(false);
   const [opportunities, setOpportunities] = useState(null);
 

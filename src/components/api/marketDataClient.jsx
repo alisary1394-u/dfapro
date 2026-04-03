@@ -128,7 +128,7 @@ export const getNews = async (symbol, market) => {
   } catch { return []; }
 };
 
-export const getTopMovers = async (market = 'saudi') => {
+export const getTopMovers = async (market = 'us') => {
   const broker = getActiveBroker();
   if (broker === 'alpaca' && (market === 'us' || market === 'USA')) {
     try {
@@ -201,7 +201,7 @@ export const getIndices = async () => {
 export const getBatchQuotes = async (symbols, market) => {
   if (!symbols?.length) return {};
   const data = await apiFetch(
-    `/api/market/batch-quotes?symbols=${encodeURIComponent(symbols.join(','))}&market=${encodeURIComponent(market || 'saudi')}`
+    `/api/market/batch-quotes?symbols=${encodeURIComponent(symbols.join(','))}&market=${encodeURIComponent(market || 'us')}`
   );
   return data?.quotes || {};
 };
@@ -223,7 +223,7 @@ export const getCorrelation = async (symbols, market = 'us') => {
   return apiFetch(`/api/market/correlation?symbols=${encodeURIComponent(symbols.join(','))}&market=${encodeURIComponent(market)}`);
 };
 
-export const getSmartScreener = async (market = 'saudi', strategy = 'momentum') => {
+export const getSmartScreener = async (market = 'us', strategy = 'momentum') => {
   return apiFetch(`/api/market/smart-screener?market=${encodeURIComponent(market)}&strategy=${encodeURIComponent(strategy)}`);
 };
 

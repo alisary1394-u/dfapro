@@ -162,7 +162,7 @@ const CorrelationMatrix = ({ data }) => {
 
 export default function SectorHeatmap() {
   const navigate = useNavigate();
-  const [market, setMarket] = useState("saudi");
+  const [market, setMarket] = useState("us");
   const [heatmapData, setHeatmapData] = useState(null);
   const [fearGreed, setFearGreed] = useState(null);
   const [correlationData, setCorrelationData] = useState(null);

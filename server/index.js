@@ -208,7 +208,7 @@ setInterval(() => {
 // GET /api/market/quote?symbol=2222&market=saudi
 app.get('/api/market/quote', async (req, res) => {
   try {
-    const { symbol, market = 'saudi' } = req.query;
+    const { symbol, market = 'us' } = req.query;
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
     
     const cacheKey = `quote:${symbol}:${market}`;
@@ -253,7 +253,7 @@ app.get('/api/market/quote', async (req, res) => {
 // GET /api/market/candles?symbol=2222&market=saudi&interval=daily[&range=5y]
 app.get('/api/market/candles', async (req, res) => {
   try {
-    const { symbol, market = 'saudi', interval = 'daily', range: reqRange } = req.query;
+    const { symbol, market = 'us', interval = 'daily', range: reqRange } = req.query;
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
 
     const cfg = intervalConfig[interval] || { yf: '1d', agg: 0 };
@@ -302,7 +302,7 @@ app.get('/api/market/candles', async (req, res) => {
 // GET /api/market/overview?symbol=2222&market=saudi
 app.get('/api/market/overview', async (req, res) => {
   try {
-    const { symbol, market = 'saudi' } = req.query;
+    const { symbol, market = 'us' } = req.query;
     if (!symbol) return res.status(400).json({ error: 'symbol required' });
     
     const cacheKey = `overview:${symbol}:${market}`;
@@ -465,7 +465,7 @@ app.get('/api/market/crypto', async (req, res) => {
 // GET /api/market/top-movers?market=saudi
 app.get('/api/market/top-movers', async (req, res) => {
   try {
-    const { market = 'saudi' } = req.query;
+    const { market = 'us' } = req.query;
     const cacheKey = `top-movers:${market}`;
     const cached = cacheGet(cacheKey);
     if (cached) return res.json(cached);
@@ -511,14 +511,14 @@ app.get('/api/market/top-movers', async (req, res) => {
 
 // Backward compatibility for old client path
 app.get('/api/market/top_movers', async (req, res) => {
-  const market = req.query.market || 'saudi';
+  const market = req.query.market || 'us';
   return res.redirect(307, `/api/market/top-movers?market=${encodeURIComponent(market)}`);
 });
 
 // GET /api/market/news?symbol=2222&market=saudi
 app.get('/api/market/news', async (req, res) => {
   try {
-    const { symbol, market = 'saudi' } = req.query;
+    const { symbol, market = 'us' } = req.query;
     const cacheKey = `news:${symbol}:${market}`;
     const cached = cacheGet(cacheKey);
     if (cached) return res.json(cached);
@@ -1034,7 +1034,7 @@ app.get('/api/market/correlation', async (req, res) => {
 // GET /api/market/smart-screener?market=us|saudi&strategy=momentum|value|breakout|oversold
 app.get('/api/market/smart-screener', async (req, res) => {
   try {
-    const { market = 'saudi', strategy = 'momentum' } = req.query;
+    const { market = 'us', strategy = 'momentum' } = req.query;
     const cacheKey = `smart-screener:${market}:${strategy}`;
     const cached = cacheGet(cacheKey);
     if (cached) return res.json(cached);
@@ -1180,7 +1180,7 @@ app.get('/api/market/smart-screener', async (req, res) => {
 // GET /api/market/batch-quotes?symbols=AAPL,MSFT,NVDA&market=us
 app.get('/api/market/batch-quotes', async (req, res) => {
   try {
-    const { symbols: symbolsStr, market = 'saudi' } = req.query;
+    const { symbols: symbolsStr, market = 'us' } = req.query;
     if (!symbolsStr) return res.json({ quotes: {} });
     
     const symbolList = symbolsStr.split(',').map(s => s.trim()).slice(0, 30);
@@ -1247,7 +1247,7 @@ const publicUser = (user) => ({
   role: user.role || 'user',
   email_verified: Boolean(user.email_verified),
   dashboard_layout: user.dashboard_layout ?? null,
-  dashboard_market: user.dashboard_market ?? 'saudi',
+  dashboard_market: user.dashboard_market ?? 'us',
   alpaca_api_key: user.alpaca_api_key ?? '',
   alpaca_secret_key: user.alpaca_secret_key ?? '',
   alpaca_base_url: user.alpaca_base_url ?? '',
@@ -1273,7 +1273,7 @@ const ensureAdminUser = async () => {
     role: 'admin',
     email_verified: true,
     dashboard_layout: null,
-    dashboard_market: 'saudi',
+    dashboard_market: 'us',
     created_at: new Date().toISOString(),
     alpaca_api_key: '',
     alpaca_secret_key: '',
@@ -1864,7 +1864,7 @@ app.post('/api/auth/register', async (req, res) => {
     role: 'user',
     email_verified: true,
     dashboard_layout: null,
-    dashboard_market: 'saudi',
+    dashboard_market: 'us',
     created_at: new Date().toISOString(),
     alpaca_api_key: '',
     alpaca_secret_key: '',

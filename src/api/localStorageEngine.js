@@ -142,11 +142,11 @@ const buildApiUrl = (baseUrl, params) => {
   const { action, symbol, market, interval, limit, from, to, coin, currency } = params;
   switch (action) {
     case 'quote':
-      return `${baseUrl}/api/market/quote?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}`;
+      return `${baseUrl}/api/market/quote?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}`;
     case 'candles':
-      return `${baseUrl}/api/market/candles?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}&interval=${encodeURIComponent(interval || 'daily')}&limit=${limit || 365}`;
+      return `${baseUrl}/api/market/candles?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}&interval=${encodeURIComponent(interval || 'daily')}&limit=${limit || 365}`;
     case 'overview':
-      return `${baseUrl}/api/market/overview?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'saudi')}`;
+      return `${baseUrl}/api/market/overview?symbol=${encodeURIComponent(symbol)}&market=${encodeURIComponent(market || 'us')}`;
     case 'indices':
       return `${baseUrl}/api/market/indices`;
     case 'forex':
@@ -154,11 +154,11 @@ const buildApiUrl = (baseUrl, params) => {
     case 'crypto':
       return `${baseUrl}/api/market/crypto?coin=${encodeURIComponent(coin || 'BTC')}&currency=${encodeURIComponent(currency || 'USD')}`;
     case 'top_movers':
-      return `${baseUrl}/api/market/top-movers?market=${encodeURIComponent(market || 'saudi')}`;
+      return `${baseUrl}/api/market/top-movers?market=${encodeURIComponent(market || 'us')}`;
     case 'news':
-      return `${baseUrl}/api/market/news?symbol=${encodeURIComponent(symbol || '')}&market=${encodeURIComponent(market || 'saudi')}`;
+      return `${baseUrl}/api/market/news?symbol=${encodeURIComponent(symbol || '')}&market=${encodeURIComponent(market || 'us')}`;
     case 'batch_quotes':
-      return `${baseUrl}/api/market/batch-quotes?symbols=${encodeURIComponent(params.symbols || '')}&market=${encodeURIComponent(market || 'saudi')}`;
+      return `${baseUrl}/api/market/batch-quotes?symbols=${encodeURIComponent(params.symbols || '')}&market=${encodeURIComponent(market || 'us')}`;
     default:
       return null;
   }
@@ -334,7 +334,7 @@ const mockUser = {
   name: "مستخدم محلي",
   email: "local@offline.app",
   dashboard_layout: null,
-  dashboard_market: "saudi",
+  dashboard_market: "us",
 };
 
 const mockAuth = {

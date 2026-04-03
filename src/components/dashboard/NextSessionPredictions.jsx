@@ -23,7 +23,7 @@ export default function NextSessionPredictions() {
   const navigate = useNavigate();
   const [predictions, setPredictions] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [market, setMarket] = useState("saudi");
+  const [market, setMarket] = useState("us");
 
   const fetchPredictions = async () => {
     setLoading(true);

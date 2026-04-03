@@ -24,7 +24,7 @@ const conditionIcons = {
 export default function Alerts() {
   const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ symbol: "", name: "", market: "saudi", condition: "above", price: "" });
+  const [form, setForm] = useState({ symbol: "", name: "", market: "us", condition: "above", price: "" });
 
   const { data: alerts = [] } = useQuery({
     queryKey: ['alerts'],
@@ -33,7 +33,7 @@ export default function Alerts() {
 
   const createMutation = useMutation({
     mutationFn: (data) => entities.Alert.create(data),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['alerts'] }); setShowAdd(false); setForm({ symbol: "", name: "", market: "saudi", condition: "above", price: "" }); }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['alerts'] }); setShowAdd(false); setForm({ symbol: "", name: "", market: "us", condition: "above", price: "" }); }
   });
 
   const deleteMutation = useMutation({

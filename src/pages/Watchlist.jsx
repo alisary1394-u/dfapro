@@ -12,7 +12,7 @@ export default function WatchlistPage() {
   const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [activeCollectionId, setActiveCollectionId] = useState(null);
-  const [form, setForm] = useState({ symbol: "", name: "", market: "saudi", target_price: "", notes: "" });
+  const [form, setForm] = useState({ symbol: "", name: "", market: "us", target_price: "", notes: "" });
 
   const { data: collections = [] } = useQuery({
     queryKey: ['watchlistCollections'],
@@ -32,7 +32,7 @@ export default function WatchlistPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['watchlistItems', activeCollectionId] });
       setShowAdd(false);
-      setForm({ symbol: "", name: "", market: "saudi", target_price: "", notes: "" });
+      setForm({ symbol: "", name: "", market: "us", target_price: "", notes: "" });
     }
   });
 

@@ -249,7 +249,7 @@ function MiniSparkline({ up }) {
 // ─── Main Page ─────────────────────────────────────────────────────────────
 export default function MarketWatch() {
   const navigate = useNavigate();
-  const [market, setMarket] = useState("saudi");
+  const [market, setMarket] = useState("us");
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);

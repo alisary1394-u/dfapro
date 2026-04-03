@@ -381,8 +381,8 @@ function StockListPanel({ market, selectedSymbol, onSelect, search, setSearch })
 // MAIN CHART BOARD
 // ═══════════════════════════════════════════════════════════════
 export default function ChartBoard() {
-  const [market, setMarket] = useState("saudi");
-  const [selectedStock, setSelectedStock] = useState({ symbol: "2222", name: "أرامكو", market: "saudi" });
+  const [market, setMarket] = useState("us");
+  const [selectedStock, setSelectedStock] = useState({ symbol: "AAPL", name: "Apple", market: "us" });
   const [timeframe, setTimeframe] = useState("1D");
   const [chartType, setChartType] = useState("candlestick");
   const [candles, setCandles] = useState([]);

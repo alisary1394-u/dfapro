@@ -21,7 +21,7 @@ const DEFAULT_LAYOUT = ALL_WIDGETS.map(w => ({
   order: w.defaultOrder,
 }));
 
-const DEFAULT_MARKET = "saudi";
+const DEFAULT_MARKET = "us";
 
 export function useDashboardLayout() {
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
