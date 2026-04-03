@@ -3,6 +3,7 @@ import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse, getB
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { useBroker } from "@/lib/BrokerContext";
+import { connectAlpaca, disconnectAlpaca, alpacaConfig } from "@/components/api/alpacaClient";
 import MarketOverviewBar from "@/components/ui/MarketOverviewBar";
 import NextSessionPredictions from "@/components/dashboard/NextSessionPredictions";
 import StockCard from "@/components/ui/StockCard";
@@ -11,7 +12,8 @@ import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import { useDashboardLayout } from "@/components/dashboard/useDashboardLayout";
 import {
   TrendingUp, TrendingDown, BarChart3, Activity, Flame, Brain, Sparkles, Target,
-  CalendarDays, Globe2, DollarSign, Bitcoin, ShieldCheck, Waves, Radar, Gauge
+  CalendarDays, Globe2, DollarSign, Bitcoin, ShieldCheck, Waves, Radar, Gauge,
+  Loader2, Power, PowerOff
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -67,7 +69,7 @@ const sourceLabelAr = (broker) => {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { broker } = useBroker();
+  const { broker, setAlpacaActive } = useBroker();
   const { layout, market, loaded, toggleWidget, moveWidget, updateMarket } = useDashboardLayout();
   const [liveMovers, setLiveMovers] = useState(null);
   const [forex, setForex] = useState(null);
@@ -76,6 +78,7 @@ export default function Dashboard() {
   const [marketPulse, setMarketPulse] = useState(null);
   const [universeStats, setUniverseStats] = useState(null);
   const [fearGreed, setFearGreed] = useState(null);
+  const [brokerActionLoading, setBrokerActionLoading] = useState(false);
 
   // Fetch live data based on selected market
   useEffect(() => {
@@ -166,6 +169,43 @@ export default function Dashboard() {
 
   const handleStockClick = (stock) => {
     navigate(createPageUrl("StockAnalysis") + `?symbol=${stock.symbol}&market=${stock.market}`);
+  };
+
+  const handleBrokerControl = async () => {
+    if (brokerActionLoading) return;
+
+    // If Alpaca is already active, disconnect it directly from dashboard.
+    if (broker?.active === 'alpaca') {
+      setBrokerActionLoading(true);
+      try {
+        await disconnectAlpaca();
+      } catch {
+        // Keep UX resilient if backend disconnect endpoint fails.
+      } finally {
+        setAlpacaActive(false, broker?.alpacaPaper);
+        setBrokerActionLoading(false);
+      }
+      return;
+    }
+
+    const saved = alpacaConfig.getConfig();
+    if (!saved?.apiKey || !saved?.secretKey) {
+      navigate(createPageUrl("BrokerManager"));
+      return;
+    }
+
+    setBrokerActionLoading(true);
+    try {
+      const result = await connectAlpaca(saved.apiKey, saved.secretKey, saved.paper !== false);
+      if (result?.connected) {
+        setAlpacaActive(true, saved.paper !== false);
+      }
+    } catch {
+      // If reconnect fails, send user to broker settings to verify keys.
+      navigate(createPageUrl("BrokerManager"));
+    } finally {
+      setBrokerActionLoading(false);
+    }
   };
 
   const isVisible = (id) => layout.find(w => w.id === id)?.enabled;
@@ -526,6 +566,29 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleBrokerControl}
+            disabled={brokerActionLoading}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+              broker?.active === 'alpaca'
+                ? 'bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25'
+                : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
+            } disabled:opacity-60`}
+            title={broker?.active === 'alpaca' ? 'إيقاف Alpaca' : 'تشغيل Alpaca'}
+          >
+            {brokerActionLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : broker?.active === 'alpaca' ? (
+              <PowerOff className="w-3.5 h-3.5" />
+            ) : (
+              <Power className="w-3.5 h-3.5" />
+            )}
+            {brokerActionLoading
+              ? 'جاري التنفيذ...'
+              : broker?.active === 'alpaca'
+                ? 'إيقاف الوسيط'
+                : 'تشغيل الوسيط'}
+          </button>
           {/* Market Selector */}
           <div className="flex gap-1 bg-[#0d1420] border border-[#1a2540] rounded-xl p-1">
             {[
