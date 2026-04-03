@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { useBroker } from "@/lib/BrokerContext";
 import { connectAlpaca, disconnectAlpaca, alpacaConfig } from "@/components/api/alpacaClient";
+import { connectPolygon, disconnectPolygon, polygonConfig } from "@/components/api/polygonClient";
 import MarketOverviewBar from "@/components/ui/MarketOverviewBar";
 import NextSessionPredictions from "@/components/dashboard/NextSessionPredictions";
 import StockCard from "@/components/ui/StockCard";
@@ -69,7 +70,7 @@ const sourceLabelAr = (broker) => {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { broker, setAlpacaActive } = useBroker();
+  const { broker, setAlpacaActive, setPolygonActive } = useBroker();
   const { layout, market, loaded, toggleWidget, moveWidget, updateMarket } = useDashboardLayout();
   const [liveMovers, setLiveMovers] = useState(null);
   const [forex, setForex] = useState(null);
@@ -78,7 +79,8 @@ export default function Dashboard() {
   const [marketPulse, setMarketPulse] = useState(null);
   const [universeStats, setUniverseStats] = useState(null);
   const [fearGreed, setFearGreed] = useState(null);
-  const [brokerActionLoading, setBrokerActionLoading] = useState(false);
+  const [alpacaActionLoading, setAlpacaActionLoading] = useState(false);
+  const [polygonActionLoading, setPolygonActionLoading] = useState(false);
 
   // Fetch live data based on selected market
   useEffect(() => {
@@ -171,19 +173,18 @@ export default function Dashboard() {
     navigate(createPageUrl("StockAnalysis") + `?symbol=${stock.symbol}&market=${stock.market}`);
   };
 
-  const handleBrokerControl = async () => {
-    if (brokerActionLoading) return;
+  const handleAlpacaControl = async () => {
+    if (alpacaActionLoading) return;
 
-    // If Alpaca is already active, disconnect it directly from dashboard.
     if (broker?.active === 'alpaca') {
-      setBrokerActionLoading(true);
+      setAlpacaActionLoading(true);
       try {
         await disconnectAlpaca();
       } catch {
         // Keep UX resilient if backend disconnect endpoint fails.
       } finally {
         setAlpacaActive(false, broker?.alpacaPaper);
-        setBrokerActionLoading(false);
+        setAlpacaActionLoading(false);
       }
       return;
     }
@@ -194,7 +195,7 @@ export default function Dashboard() {
       return;
     }
 
-    setBrokerActionLoading(true);
+    setAlpacaActionLoading(true);
     try {
       const result = await connectAlpaca(saved.apiKey, saved.secretKey, saved.paper !== false);
       if (result?.connected) {
@@ -204,7 +205,43 @@ export default function Dashboard() {
       // If reconnect fails, send user to broker settings to verify keys.
       navigate(createPageUrl("BrokerManager"));
     } finally {
-      setBrokerActionLoading(false);
+      setAlpacaActionLoading(false);
+    }
+  };
+
+  const handlePolygonControl = async () => {
+    if (polygonActionLoading) return;
+
+    if (broker?.active === 'polygon') {
+      setPolygonActionLoading(true);
+      try {
+        await disconnectPolygon();
+      } catch {
+        // Keep UX resilient if backend disconnect endpoint fails.
+      } finally {
+        setPolygonActive(false);
+        setPolygonActionLoading(false);
+      }
+      return;
+    }
+
+    const saved = polygonConfig.getConfig();
+    if (!saved?.apiKey) {
+      navigate(createPageUrl("BrokerManager"));
+      return;
+    }
+
+    setPolygonActionLoading(true);
+    try {
+      const result = await connectPolygon(saved.apiKey);
+      if (result?.connected) {
+        setPolygonActive(true);
+      }
+    } catch {
+      // If reconnect fails, send user to broker settings to verify keys.
+      navigate(createPageUrl("BrokerManager"));
+    } finally {
+      setPolygonActionLoading(false);
     }
   };
 
@@ -567,8 +604,8 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={handleBrokerControl}
-            disabled={brokerActionLoading}
+            onClick={handleAlpacaControl}
+            disabled={alpacaActionLoading}
             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
               broker?.active === 'alpaca'
                 ? 'bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25'
@@ -576,18 +613,41 @@ export default function Dashboard() {
             } disabled:opacity-60`}
             title={broker?.active === 'alpaca' ? 'إيقاف Alpaca' : 'تشغيل Alpaca'}
           >
-            {brokerActionLoading ? (
+            {alpacaActionLoading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : broker?.active === 'alpaca' ? (
               <PowerOff className="w-3.5 h-3.5" />
             ) : (
               <Power className="w-3.5 h-3.5" />
             )}
-            {brokerActionLoading
+            {alpacaActionLoading
               ? 'جاري التنفيذ...'
               : broker?.active === 'alpaca'
-                ? 'إيقاف الوسيط'
-                : 'تشغيل الوسيط'}
+                ? 'إيقاف Alpaca'
+                : 'تشغيل Alpaca'}
+          </button>
+          <button
+            onClick={handlePolygonControl}
+            disabled={polygonActionLoading}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+              broker?.active === 'polygon'
+                ? 'bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25'
+                : 'bg-sky-500/15 border-sky-500/30 text-sky-400 hover:bg-sky-500/25'
+            } disabled:opacity-60`}
+            title={broker?.active === 'polygon' ? 'إيقاف Polygon' : 'تشغيل Polygon'}
+          >
+            {polygonActionLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : broker?.active === 'polygon' ? (
+              <PowerOff className="w-3.5 h-3.5" />
+            ) : (
+              <Power className="w-3.5 h-3.5" />
+            )}
+            {polygonActionLoading
+              ? 'جاري التنفيذ...'
+              : broker?.active === 'polygon'
+                ? 'إيقاف Polygon'
+                : 'تشغيل Polygon'}
           </button>
           {/* Market Selector */}
           <div className="flex gap-1 bg-[#0d1420] border border-[#1a2540] rounded-xl p-1">
