@@ -8,6 +8,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { setBroker, clearBroker } from '@/lib/brokerState';
+import { authClient } from '@/api/authClient';
 import {
   connectAlpaca,
   disconnectAlpaca,
@@ -60,8 +61,18 @@ export function BrokerProvider({ children }) {
         }
       } catch { /* not connected */ }
 
-      // Try reconnect with saved keys
-      const saved = alpacaConfig.getConfig();
+      // Try reconnect with saved keys (localStorage first, then DB)
+      let saved = alpacaConfig.getConfig();
+      if (!saved?.apiKey || !saved?.secretKey) {
+        try {
+          const dbUser = await authClient.me();
+          if (dbUser?.alpaca_api_key && dbUser?.alpaca_secret_key) {
+            saved = { apiKey: dbUser.alpaca_api_key, secretKey: dbUser.alpaca_secret_key, paper: saved?.paper !== false };
+            // Cache to localStorage for next time
+            alpacaConfig.saveConfig({ ...saved, connected: false });
+          }
+        } catch { /* not authenticated or server down */ }
+      }
       if (saved?.apiKey && saved?.secretKey) {
         try {
           const r = await connectAlpaca(saved.apiKey, saved.secretKey, saved.paper !== false);
@@ -91,10 +102,19 @@ export function BrokerProvider({ children }) {
         }
       } catch { /* not connected */ }
 
-      const saved = polygonConfig.getConfig();
-      if (saved?.apiKey) {
+      let savedPoly = polygonConfig.getConfig();
+      if (!savedPoly?.apiKey) {
         try {
-          const r = await connectPolygon(saved.apiKey);
+          const dbUser = await authClient.me();
+          if (dbUser?.polygon_api_key) {
+            savedPoly = { apiKey: dbUser.polygon_api_key };
+            polygonConfig.saveConfig({ apiKey: dbUser.polygon_api_key, connected: false });
+          }
+        } catch { /* ignore */ }
+      }
+      if (savedPoly?.apiKey) {
+        try {
+          const r = await connectPolygon(savedPoly.apiKey);
           if (cancelled) return;
           if (r.connected) {
             setBrokerState(prev => {

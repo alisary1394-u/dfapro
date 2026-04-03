@@ -14,6 +14,7 @@ import {
   getAlpacaPositions,
   alpacaConfig,
 } from "@/components/api/alpacaClient";
+import { polygonConfig } from "@/components/api/polygonClient";
 
 export default function BrokerManager() {
   const { user, setUser } = useAuth();
@@ -116,6 +117,8 @@ export default function BrokerManager() {
         polygon_api_key: polygonKey.trim(),
       });
       setUser(updated);
+      // Cache to localStorage so BrokerContext can auto-connect
+      polygonConfig.saveConfig({ apiKey: polygonKey.trim(), connected: false });
       setSaveSuccess("تم حفظ المفاتيح بنجاح. أي قيمة جديدة استبدلت القيمة القديمة.");
     } catch {
       setSaveError("تعذر حفظ المفاتيح الآن. حاول مرة أخرى.");
