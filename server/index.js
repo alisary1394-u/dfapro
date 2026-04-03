@@ -178,18 +178,18 @@ const yfFetch = async (url) => {
 // ── In-memory cache ──────────────────────────────────────────
 const cache = new Map();
 const TTL = {
-  quote:       15 * 1000,   // 15 seconds
-  'batch-quotes': 15 * 1000,
-  candles_intraday: 3 * 60 * 1000,   // 3 minutes
-  candles_daily:   5 * 60 * 1000,    // 5 minutes
-  indices:     60 * 1000,   // 60 seconds
-  'top-movers': 2 * 60 * 1000,  // 2 minutes
+  quote:       3 * 1000,    // 3 seconds (faster updates for real-time)
+  'batch-quotes': 3 * 1000, // 3 seconds (faster updates for real-time)
+  candles_intraday: 1 * 60 * 1000,   // 1 minute
+  candles_daily:   2 * 60 * 1000,    // 2 minutes
+  indices:     5 * 1000,    // 5 seconds (faster for real-time)
+  'top-movers': 30 * 1000,  // 30 seconds (faster updates)
   overview:    60 * 1000,
-  news:        5 * 60 * 1000,
-  forex:       60 * 1000,
-  crypto:      30 * 1000,
+  news:        10 * 60 * 1000,
+  forex:       5 * 1000,    // 5 seconds (real-time forex)
+  crypto:      5 * 1000,    // 5 seconds (real-time crypto)
   options_chain: 20 * 1000,
-  market_pulse: 30 * 1000,
+  market_pulse: 5 * 1000,   // 5 seconds (real-time pulse)
 };
 
 const cacheGet = (key) => {
@@ -1978,7 +1978,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => clientSubs.delete(socket.id));
 });
 
-// Aggregate all watched symbols and broadcast prices every 3 seconds
+// Aggregate all watched symbols and broadcast prices every 1 second for real-time
 let livePriceTimer = null;
 const startLivePrices = () => {
   if (livePriceTimer) return;
@@ -2043,7 +2043,7 @@ const startLivePrices = () => {
         }
       }
     }
-  }, 3000);
+  }, 1000); // 1 second for real-time updates
 };
 startLivePrices();
 

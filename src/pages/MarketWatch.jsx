@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getQuote, getBatchQuotes } from "@/components/api/marketDataClient";
+import { useLivePrices } from "@/hooks/useLivePrices";
 import { getPollInterval } from "@/lib/brokerState";
 import { createPageUrl } from "@/utils";
 import { useNavigate } from "react-router-dom";
@@ -264,6 +265,10 @@ export default function MarketWatch() {
   const [loadedCount, setLoadedCount] = useState(0);
   const stockList = market === "saudi" ? SAUDI_STOCKS : US_STOCKS;
 
+  // Subscribe to live prices for all stocks in current market
+  const allSymbols = React.useMemo(() => stockList.map(s => s.symbol), [market]);
+  const { prices: livePrices } = useLivePrices(allSymbols, market);
+
   // Load quotes in batches of 10 via batch API for speed
   const loadQuotes = useCallback(async (list, isRefresh = false) => {
     setLoading(true);
@@ -377,7 +382,17 @@ export default function MarketWatch() {
   };
 
   const sectors = ["الكل", ...Array.from(new Set(stockList.map(s => s.sector)))];
-  const filtered = stocks
+  // Merge live prices into stocks for real-time display
+  const stocksWithLivePrices = React.useMemo(() => {
+    return stocks.map(stock => {
+      if (livePrices[stock.symbol]) {
+        return { ...stock, ...livePrices[stock.symbol] };
+      }
+      return stock;
+    });
+  }, [stocks, livePrices]);
+
+  const filtered = stocksWithLivePrices
     .filter(s => {
       const matchSearch = s.symbol.toLowerCase().includes(search.toLowerCase()) || s.name.includes(search);
       const matchSector = filterSector === "الكل" || s.sector === filterSector;

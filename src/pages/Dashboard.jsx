@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse, getBrokerUniverseStats, getFearGreed } from "@/components/api/marketDataClient";
+import { useLivePrices } from "@/hooks/useLivePrices";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { authClient } from "@/api/authClient";
@@ -86,6 +87,30 @@ export default function Dashboard() {
   const [polygonActionLoading, setPolygonActionLoading] = useState(false);
   const [brokerActionError, setBrokerActionError] = useState("");
 
+  // Extract symbol list from movers for real-time subscription
+  const moversSymbols = React.useMemo(() => {
+    if (!liveMovers?.gainers) return [];
+    const symbols = [
+      ...(liveMovers.gainers || []).map(s => s.symbol),
+      ...(liveMovers.losers || []).map(s => s.symbol),
+    ];
+    return [...new Set(symbols)]; // deduplicate
+  }, [liveMovers]);
+
+  // Subscribe to live prices for movers symbols
+  const { prices: livePrices } = useLivePrices(moversSymbols, market);
+
+  // Merge live prices into movers data
+  const getMoverWithLivePrice = (mover) => {
+    if (!livePrices[mover.symbol]) return mover;
+    const live = livePrices[mover.symbol];
+    return {
+      ...mover,
+      price: live.price,
+      change: live.change,
+    };
+  };
+
   // Fetch live data based on selected market
   useEffect(() => {
     let cancelled = false;
@@ -112,12 +137,12 @@ export default function Dashboard() {
     return () => { cancelled = true; clearInterval(iv); };
   }, [market, broker?.active]);
 
-  const gainers = liveMovers?.gainers?.length
-    ? liveMovers.gainers
-    : fallbackGainers[market];
-  const losers = liveMovers?.losers?.length
-    ? liveMovers.losers
-    : fallbackLosers[market];
+  const gainers = (liveMovers?.gainers?.length
+    ? liveMovers.gainers.map(getMoverWithLivePrice)
+    : fallbackGainers[market]);
+  const losers = (liveMovers?.losers?.length
+    ? liveMovers.losers.map(getMoverWithLivePrice)
+    : fallbackLosers[market]);
   const isLive = !!liveMovers?.gainers?.length;
 
   const vixIndicator = marketPulse?.indicators?.find((i) => i.key === 'vix');

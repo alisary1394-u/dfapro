@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createChart } from "lightweight-charts";
 import { base44 } from "@/api/base44Client";
 import { getQuote } from "@/components/api/marketDataClient";
+import { useLivePrices } from "@/hooks/useLivePrices";
 import {
   Search, Brain, RefreshCw, Loader2, BarChart3,
   ArrowUpRight, ArrowDownRight, ChevronDown, X,
@@ -437,17 +438,21 @@ export default function ChartBoard() {
 
   const selectedTf = useMemo(() => TIMEFRAMES.find(t => t.value === timeframe) || TIMEFRAMES[4], [timeframe]);
 
+  // Subscribe to live prices for the selected stock
+  const { prices: livePrices } = useLivePrices([selectedStock?.symbol].filter(Boolean), market);
+
   // ── Fetch Quote ──
   useEffect(() => {
     if (!selectedStock) return;
-    let first = true;
-    const fetchQuote = () => {
-      if (first) { setQuote(null); first = false; }
+    
+    // Use live price if available, otherwise fetch statically
+    if (livePrices[selectedStock.symbol]) {
+      setQuote(livePrices[selectedStock.symbol]);
+    } else {
+      // Initial load only - live prices will update via socket
       getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
-    };
-    fetchQuote();
-    const iv = setInterval(fetchQuote, 3000);
-    return () => clearInterval(iv);
+    }
+  }, [livePrices, selectedStock]);
   }, [selectedStock, market]);
 
   // ── Fetch Candles ──
