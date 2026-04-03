@@ -453,7 +453,6 @@ export default function ChartBoard() {
       getQuote(selectedStock.symbol, market).then(q => setQuote(q)).catch(() => {});
     }
   }, [livePrices, selectedStock]);
-  }, [selectedStock, market]);
 
   // ── Fetch Candles ──
   useEffect(() => {
