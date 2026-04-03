@@ -638,52 +638,6 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleAlpacaControl}
-            disabled={alpacaActionLoading}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-              broker?.active === 'alpaca'
-                ? 'bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25'
-                : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
-            } disabled:opacity-60`}
-            title={broker?.active === 'alpaca' ? 'إيقاف Alpaca' : 'تشغيل Alpaca'}
-          >
-            {alpacaActionLoading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : broker?.active === 'alpaca' ? (
-              <PowerOff className="w-3.5 h-3.5" />
-            ) : (
-              <Power className="w-3.5 h-3.5" />
-            )}
-            {alpacaActionLoading
-              ? 'جاري التنفيذ...'
-              : broker?.active === 'alpaca'
-                ? 'إيقاف Alpaca'
-                : 'تشغيل Alpaca'}
-          </button>
-          <button
-            onClick={handlePolygonControl}
-            disabled={polygonActionLoading}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-              broker?.active === 'polygon'
-                ? 'bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25'
-                : 'bg-sky-500/15 border-sky-500/30 text-sky-400 hover:bg-sky-500/25'
-            } disabled:opacity-60`}
-            title={broker?.active === 'polygon' ? 'إيقاف Polygon' : 'تشغيل Polygon'}
-          >
-            {polygonActionLoading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : broker?.active === 'polygon' ? (
-              <PowerOff className="w-3.5 h-3.5" />
-            ) : (
-              <Power className="w-3.5 h-3.5" />
-            )}
-            {polygonActionLoading
-              ? 'جاري التنفيذ...'
-              : broker?.active === 'polygon'
-                ? 'إيقاف Polygon'
-                : 'تشغيل Polygon'}
-          </button>
           {/* Market Selector */}
           <div className="flex gap-1 bg-[#0d1420] border border-[#1a2540] rounded-xl p-1">
             {[
@@ -718,6 +672,65 @@ export default function Dashboard() {
           {brokerActionError}
         </div>
       )}
+
+      {/* ── Broker Control Card ── */}
+      <div className="bg-[#0d1420] border border-[#1a2540] rounded-2xl px-5 py-4 flex flex-wrap items-center gap-4">
+        <span className="text-xs font-black text-[#94a3b8] shrink-0">تحكم الوسيط</span>
+
+        {/* Alpaca */}
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${broker?.alpacaConnected ? 'bg-emerald-400 animate-pulse' : 'bg-[#334155]'}`} />
+          <span className="text-xs text-[#64748b] w-16 shrink-0">Alpaca</span>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleAlpacaControl(); }}
+            disabled={alpacaActionLoading}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all select-none cursor-pointer ${
+              broker?.active === 'alpaca'
+                ? 'bg-red-500/20 border-red-500/40 text-red-300 hover:bg-red-500/30'
+                : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
+            } disabled:opacity-60 disabled:cursor-not-allowed`}
+          >
+            {alpacaActionLoading
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : broker?.active === 'alpaca'
+                ? <PowerOff className="w-3.5 h-3.5" />
+                : <Power className="w-3.5 h-3.5" />}
+            {alpacaActionLoading ? 'جاري...' : broker?.active === 'alpaca' ? 'إيقاف' : 'تشغيل'}
+          </button>
+          {broker?.active === 'alpaca' && (
+            <span className="text-[10px] text-emerald-400">{broker?.alpacaPaper ? 'ورقي' : 'حقيقي'}</span>
+          )}
+        </div>
+
+        <div className="w-px h-6 bg-[#1a2540] shrink-0 hidden sm:block" />
+
+        {/* Polygon */}
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${broker?.polygonConnected ? 'bg-sky-400 animate-pulse' : 'bg-[#334155]'}`} />
+          <span className="text-xs text-[#64748b] w-16 shrink-0">Polygon</span>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handlePolygonControl(); }}
+            disabled={polygonActionLoading}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all select-none cursor-pointer ${
+              broker?.active === 'polygon'
+                ? 'bg-red-500/20 border-red-500/40 text-red-300 hover:bg-red-500/30'
+                : 'bg-sky-500/15 border-sky-500/30 text-sky-400 hover:bg-sky-500/25'
+            } disabled:opacity-60 disabled:cursor-not-allowed`}
+          >
+            {polygonActionLoading
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : broker?.active === 'polygon'
+                ? <PowerOff className="w-3.5 h-3.5" />
+                : <Power className="w-3.5 h-3.5" />}
+            {polygonActionLoading ? 'جاري...' : broker?.active === 'polygon' ? 'إيقاف' : 'تشغيل'}
+          </button>
+          {broker?.active === 'polygon' && (
+            <span className="text-[10px] text-sky-400">نشط</span>
+          )}
+        </div>
+      </div>
 
       {rendered}
     </div>
