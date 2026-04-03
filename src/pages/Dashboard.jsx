@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { getTopMovers, getForex, getCrypto, getBatchQuotes, getMarketPulse, getBrokerUniverseStats, getFearGreed } from "@/components/api/marketDataClient";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import { authClient } from "@/api/authClient";
 import { useAuth } from "@/lib/AuthContext";
 import { useBroker } from "@/lib/BrokerContext";
 import { connectAlpaca, disconnectAlpaca, alpacaConfig } from "@/components/api/alpacaClient";
@@ -83,6 +84,7 @@ export default function Dashboard() {
   const [fearGreed, setFearGreed] = useState(null);
   const [alpacaActionLoading, setAlpacaActionLoading] = useState(false);
   const [polygonActionLoading, setPolygonActionLoading] = useState(false);
+  const [brokerActionError, setBrokerActionError] = useState("");
 
   // Fetch live data based on selected market
   useEffect(() => {
@@ -177,6 +179,7 @@ export default function Dashboard() {
 
   const handleAlpacaControl = async () => {
     if (alpacaActionLoading) return;
+    setBrokerActionError("");
 
     if (broker?.active === 'alpaca') {
       setAlpacaActionLoading(true);
@@ -191,13 +194,25 @@ export default function Dashboard() {
       return;
     }
 
+    // If already connected in context, just switch active provider.
+    if (broker?.alpacaConnected) {
+      setAlpacaActive(true, broker?.alpacaPaper);
+      return;
+    }
+
     const saved = alpacaConfig.getConfig() || {};
-    const apiKey = saved.apiKey || user?.alpaca_api_key || "";
-    const secretKey = saved.secretKey || user?.alpaca_secret_key || "";
+    let apiKey = (saved.apiKey || user?.alpaca_api_key || "").trim();
+    let secretKey = (saved.secretKey || user?.alpaca_secret_key || "").trim();
     const paper = saved.paper !== false;
 
     if (!apiKey || !secretKey) {
-      navigate(createPageUrl("BrokerManager"));
+      const freshUser = await authClient.me().catch(() => null);
+      apiKey = (apiKey || freshUser?.alpaca_api_key || "").trim();
+      secretKey = (secretKey || freshUser?.alpaca_secret_key || "").trim();
+    }
+
+    if (!apiKey || !secretKey) {
+      setBrokerActionError("مفاتيح Alpaca غير محفوظة. أضفها من صفحة إدارة الوسيط.");
       return;
     }
 
@@ -208,9 +223,8 @@ export default function Dashboard() {
         alpacaConfig.saveConfig({ apiKey, secretKey, paper, connected: true });
         setAlpacaActive(true, paper);
       }
-    } catch {
-      // If reconnect fails, send user to broker settings to verify keys.
-      navigate(createPageUrl("BrokerManager"));
+    } catch (err) {
+      setBrokerActionError(err?.message || "تعذر تشغيل Alpaca الآن. تحقق من المفاتيح.");
     } finally {
       setAlpacaActionLoading(false);
     }
@@ -218,6 +232,7 @@ export default function Dashboard() {
 
   const handlePolygonControl = async () => {
     if (polygonActionLoading) return;
+    setBrokerActionError("");
 
     if (broker?.active === 'polygon') {
       setPolygonActionLoading(true);
@@ -232,10 +247,22 @@ export default function Dashboard() {
       return;
     }
 
+    // If already connected in context, just switch active provider.
+    if (broker?.polygonConnected) {
+      setPolygonActive(true);
+      return;
+    }
+
     const saved = polygonConfig.getConfig() || {};
-    const apiKey = saved.apiKey || user?.polygon_api_key || "";
+    let apiKey = (saved.apiKey || user?.polygon_api_key || "").trim();
+
     if (!apiKey) {
-      navigate(createPageUrl("BrokerManager"));
+      const freshUser = await authClient.me().catch(() => null);
+      apiKey = (apiKey || freshUser?.polygon_api_key || "").trim();
+    }
+
+    if (!apiKey) {
+      setBrokerActionError("مفتاح Polygon غير محفوظ. أضفه من صفحة إدارة الوسيط.");
       return;
     }
 
@@ -246,9 +273,8 @@ export default function Dashboard() {
         polygonConfig.saveConfig({ apiKey, connected: true });
         setPolygonActive(true);
       }
-    } catch {
-      // If reconnect fails, send user to broker settings to verify keys.
-      navigate(createPageUrl("BrokerManager"));
+    } catch (err) {
+      setBrokerActionError(err?.message || "تعذر تشغيل Polygon الآن. تحقق من المفتاح.");
     } finally {
       setPolygonActionLoading(false);
     }
@@ -686,6 +712,12 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {brokerActionError && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-xs font-medium text-red-300">
+          {brokerActionError}
+        </div>
+      )}
 
       {rendered}
     </div>
